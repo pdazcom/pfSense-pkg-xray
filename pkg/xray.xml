@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE packagegui SYSTEM "../schema/packages.dtd">
+<?xml-stylesheet type="text/xsl" href="../xsl/package.xsl"?>
+<packagegui>
+	<copyright>
+	<![CDATA[
+/*
+ * xray.xml
+ *
+ * part of pfSense (https://www.pfsense.org)
+ * Copyright (c) 2026 Konstantin A.
+ * Portions derived from os-xray Copyright (c) 2026 Pavel
+ * All rights reserved.
+ *
+ * Licensed under the BSD 2-Clause License.
+ */
+	]]>
+	</copyright>
+	<name>xray</name>
+	<version>1.0.0</version>
+	<title>VPN/Xray</title>
+	<include_file>/usr/local/pkg/xray/includes/xray.inc</include_file>
+	<menu>
+		<name>Xray</name>
+		<section>VPN</section>
+		<url>/xray/xray_instances.php</url>
+	</menu>
+	<service>
+		<name>xray</name>
+		<rcfile>xray</rcfile>
+		<executable>xray-core</executable>
+		<description>Xray VPN (xray-core + tun2socks)</description>
+	</service>
+	<custom_php_install_command>
+		<![CDATA[
+		xray_install();
+		]]>
+	</custom_php_install_command>
+	<custom_php_pre_deinstall_command>
+		<![CDATA[
+		xray_deinstall();
+		]]>
+	</custom_php_pre_deinstall_command>
+	<custom_php_resync_config_command>
+		<![CDATA[
+		xray_resync();
+		]]>
+	</custom_php_resync_config_command>
+</packagegui>
