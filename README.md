@@ -28,6 +28,10 @@ Traffic you want to tunnel is sent to the Xray gateway via pfSense policy-based 
 ## Features
 
 - **Multi-instance** — run several independent VPN tunnels simultaneously, each with its own UUID, TUN interface, SOCKS5 port, and config
+- **Connection groups** — organize connections into manual or subscription-based groups; each instance binds to a group
+- **Subscription support** — fetch `vless://` links from a URL, auto-parse and sync connections (add / update / remove); auto-update every 30 minutes via cron
+- **Connection rotation** — on start or watchdog trigger, URL-tests all connections in the group and activates the first working one
+- **URL test** — per-connection reachability test via a temporary xray-core SOCKS5 instance; stores ping RTT result in the GUI
 - **Wizard mode** — VLESS+Reality fields in the GUI (UUID, SNI, PublicKey, ShortID, Fingerprint, flow)
 - **Custom JSON mode** — paste any xray-core `config.json` directly; supports all protocols and transports (xhttp, ws, grpc, h2, kcp, tcp)
 - **VLESS link import** — paste a `vless://` link to auto-fill wizard fields; non-Reality transports automatically fall back to Custom JSON mode
@@ -40,6 +44,7 @@ Traffic you want to tunnel is sent to the Xray gateway via pfSense policy-based 
 - **Watchdog** — cron-based crash recovery (per minute); respects manual stop (stopped flag)
 - **Auto-start on boot** — FreeBSD rc.d script (`/usr/local/etc/rc.d/xray.sh`)
 - **Bypass Networks** — configurable CIDR list routed directly, not through Xray
+- **Webhook notifications** — per-instance and global webhook called when rotation finds no working connection
 
 ---
 
@@ -115,18 +120,38 @@ sh install.sh uninstall
 
 ## GUI Setup
 
+### Add connections
+
+**VPN → Xray → Connections**
+
+Connections are organized into groups. There is always a **Default** group for manually managed connections.
+
+#### Manual connection
+
+1. Select a group (or use Default) → **Add Connection**
+2. Expand **Import from VLESS Link** → paste link → **Parse & Fill**, or fill fields manually
+3. **Save**
+
+#### Subscription group
+
+1. **Add Group** → set type to **Subscription**, enter the subscription URL
+2. Optionally enable **Auto-update** (updates every 30 minutes via cron)
+3. **Save** → **Update Now** to fetch and sync connections immediately
+
+After updating, the connections list shows a ping result badge for each entry (run **URL Test** to populate it).
+
+---
+
 ### Add an instance
 
 **VPN → Xray → Instances → Add Instance**
 
-1. Expand **Import from VLESS Link** → paste link → **Parse & Fill**
-   - Standard `tcp+reality` links fill wizard fields automatically
-   - Other transports (`xhttp`, `ws`, `grpc`, `h2`, `kcp`) generate Custom JSON automatically
-2. Or fill the **Wizard** tab fields manually
-3. Or switch to **Custom JSON** tab and paste a full `config.json`
-4. Set **TUN Interface** name (e.g. `proxytun0`) — must be unique per instance
-5. Set **SOCKS5 Port** — must be unique per instance (default: `10808`)
-6. **Save** → **Start**
+1. Select a **Connection Group** — the instance will use connections from this group
+2. Set **TUN Interface** name (e.g. `proxytun0`) — must be unique per instance
+3. Set **SOCKS5 Port** — must be unique per instance (default: `10808`)
+4. **Save** → **Start**
+
+On start, the instance runs connection rotation: it URL-tests each connection in the group and activates the first working one. The active connection is shown in the instance list.
 
 ---
 
@@ -203,27 +228,37 @@ Then manually remove in pfSense UI:
 ```
 pfSense-pkg-xray/
 ├── pkg/
-│   └── xray.xml                          # Package manifest (menus, hooks, cron)
+│   └── xray.xml                              # Package manifest (menus, hooks, cron)
 ├── files/
 │   ├── usr/local/www/xray/
-│   │   ├── xray_instances.php            # Instance list + live status (AJAX polling)
-│   │   ├── xray_edit.php                 # Create/edit instance + VLESS import
-│   │   ├── xray_settings.php             # Global settings (enable, watchdog)
-│   │   ├── xray_diagnostics.php          # TUN stats, logs, connection test
-│   │   └── xray_ajax.php                 # AJAX dispatcher + VLESS parser
+│   │   ├── xray_connections.php              # Connection groups + connections list
+│   │   ├── xray_connection_edit.php          # Create/edit connection + VLESS import
+│   │   ├── xray_group_edit.php               # Create/edit connection group (manual/subscription)
+│   │   ├── xray_instances.php                # Instance list + live status (AJAX polling)
+│   │   ├── xray_edit.php                     # Create/edit instance
+│   │   ├── xray_settings.php                 # Global settings (enable, watchdog, test URL, webhook)
+│   │   ├── xray_diagnostics.php              # TUN stats, logs, connection test
+│   │   └── xray_ajax.php                     # AJAX dispatcher + VLESS parser
 │   ├── usr/local/pkg/
 │   │   └── xray/includes/
-│   │       ├── xray.inc                  # Config R/W, TUN registration, hooks
-│   │       ├── xray_validate.inc         # Input validation
-│   │       └── xray_foot.inc             # Footer include
+│   │       ├── xray.inc                      # Config R/W, TUN registration, hooks, group/connection helpers
+│   │       ├── xray_connections.inc          # Connection CRUD backed by JSON file (CLI-safe)
+│   │       ├── xray_vless.inc                # VLESS link parser
+│   │       ├── xray_validate.inc             # Input validation (instances, connections, groups)
+│   │       └── xray_foot.inc                 # Footer include
 │   ├── usr/local/scripts/xray/
-│   │   ├── xray-service-control.php      # Process management (start/stop/status/validate)
-│   │   ├── xray-watchdog.php             # Crash recovery daemon
-│   │   ├── xray-ifstats.php              # TUN interface statistics + ping
-│   │   └── xray-testconnect.php          # SOCKS5 connectivity test
+│   │   ├── xray-service-control.php          # Process management (start/stop/status/validate)
+│   │   ├── xray-watchdog.php                 # Crash recovery daemon
+│   │   ├── xray-rotation.php                 # Connection rotation (URL-test group, pick winner)
+│   │   ├── xray-urltest.php                  # URL-test a single connection via temporary xray-core
+│   │   ├── xray-urltest-group.php            # Async group URL-test (one xray-core, writes progress JSON)
+│   │   ├── xray-subscription-update.php      # Fetch & sync subscription group connections
+│   │   ├── xray-subscription-autoupdate.php  # Cron wrapper: auto-update all subscription groups
+│   │   ├── xray-ifstats.php                  # TUN interface statistics + ping
+│   │   └── xray-testconnect.php              # SOCKS5 connectivity test
 │   └── usr/local/etc/rc.d/
-│       └── xray.sh                       # FreeBSD rc.d boot script
-└── install.sh                            # Install / update / uninstall script
+│       └── xray.sh                           # FreeBSD rc.d boot script
+└── install.sh                                # Install / update / uninstall script
 ```
 
 ---
@@ -235,13 +270,14 @@ All runtime files are named by instance UUID to avoid conflicts between instance
 | File | Purpose |
 |------|---------|
 | `/usr/local/etc/xray-core/config-{uuid}.json` | xray-core config |
+| `/usr/local/etc/xray-core/connections.json` | Connections store (all groups) |
 | `/usr/local/tun2socks/config-{uuid}.yaml` | tun2socks config |
 | `/var/run/xray_core_{uuid}.pid` | xray-core PID |
 | `/var/run/tun2socks_{uuid}.pid` | tun2socks PID |
 | `/var/run/xray_start_{uuid}.lock` | Per-instance startup lock (flock) |
 | `/var/run/xray_stopped_{uuid}.flag` | Manual stop marker (watchdog skips) |
 | `/var/log/xray-core.log` | xray-core + tun2socks stderr output |
-| `/var/log/xray-watchdog.log` | Watchdog restart events |
+| `/var/log/xray-watchdog.log` | Watchdog restart events + subscription autoupdate log |
 
 ---
 

@@ -20,8 +20,8 @@ require_once('guiconfig.inc');
 require_once('xray/includes/xray.inc');
 
 if ($_POST && isset($_POST['act']) && $_POST['act'] === 'delete') {
-	$delUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_POST['uuid'] ?? '');
-	if (strlen($delUuid) === 36) {
+	$delUuid = xray_sanitize_uuid($_POST['uuid'] ?? '');
+	if ($delUuid !== '') {
 		xray_delete_instance($delUuid);
 		xray_resync();
 	}
@@ -30,27 +30,42 @@ if ($_POST && isset($_POST['act']) && $_POST['act'] === 'delete') {
 }
 
 $instances = xray_get_instances();
+$allConns  = xray_get_connections();
+$allGroups = xray_get_groups();
 
-function xray_instance_protocol(array $inst): string
+function xray_instance_connection_label(array $inst, array $allConns, array $allGroups): string
 {
-	return ($inst['config_mode'] ?? 'wizard') === 'custom' ? 'Custom' : 'VLESS';
-}
+	$mode = $inst['connection_mode'] ?? 'fixed';
 
-function xray_instance_transport(array $inst): string
-{
-	if (($inst['config_mode'] ?? 'wizard') === 'custom') {
-		return '&mdash;';
+	if ($mode === 'rotation') {
+		$groupUuid = $inst['connection_group_uuid'] ?? '';
+		$groupName = '';
+		foreach ($allGroups as $g) {
+			if ($g['uuid'] === $groupUuid) {
+				$groupName = $g['name'];
+				break;
+			}
+		}
+		return htmlspecialchars($groupName !== '' ? $groupName : gettext('(unknown group)'), ENT_QUOTES, 'UTF-8')
+			. ' <span class="label label-info">' . gettext('rotation') . '</span>';
 	}
-	return trim($inst['reality_sni'] ?? '') !== '' ? 'Reality' : 'TCP';
+
+	$connUuid = $inst['connection_uuid'] ?? '';
+	foreach ($allConns as $conn) {
+		if ($conn['uuid'] === $connUuid) {
+			$name = htmlspecialchars($conn['name'] ?? '', ENT_QUOTES, 'UTF-8');
+			$addr = htmlspecialchars($conn['server_address'] ?? '', ENT_QUOTES, 'UTF-8');
+			$port = (int)($conn['server_port'] ?? 443);
+			return $name . '<br><small class="text-muted"><code>' . $addr . ':' . $port . '</code></small>';
+		}
+	}
+	return '<span class="text-muted">' . gettext('(none)') . '</span>';
 }
 
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Instances')];
 $pglinks  = ['', '@self', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Instances'),   true,  '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('instances');
 
 include('head.inc');
 
@@ -65,11 +80,9 @@ display_top_tabs($tab_array);
 			<thead>
 				<tr>
 					<th><?=gettext('Name')?></th>
-					<th><?=gettext('Server')?></th>
+					<th><?=gettext('Connection')?></th>
 					<th><?=gettext('TUN Interface')?></th>
 					<th><?=gettext('SOCKS5')?></th>
-					<th><?=gettext('Protocol')?></th>
-					<th><?=gettext('Transport')?></th>
 					<th><?=gettext('Status')?></th>
 					<th><?=gettext('Actions')?></th>
 				</tr>
@@ -82,11 +95,9 @@ if (!empty($instances)):
 ?>
 				<tr>
 					<td><?=htmlspecialchars($inst['name'] ?? '', ENT_QUOTES, 'UTF-8')?></td>
-					<td><?=htmlspecialchars($inst['server_address'] ?? '', ENT_QUOTES, 'UTF-8')?>:<?=(int)($inst['server_port'] ?? 443)?></td>
+					<td><?=xray_instance_connection_label($inst, $allConns, $allGroups)?></td>
 					<td><code><?=htmlspecialchars($inst['tun_interface'] ?? '', ENT_QUOTES, 'UTF-8')?></code></td>
 					<td><?=htmlspecialchars($inst['socks5_listen'] ?? '', ENT_QUOTES, 'UTF-8')?>:<?=(int)($inst['socks5_port'] ?? 10808)?></td>
-					<td><?=htmlspecialchars(xray_instance_protocol($inst), ENT_QUOTES, 'UTF-8')?></td>
-					<td><?=xray_instance_transport($inst)?></td>
 					<td>
 						<span class="xray-status" data-uuid="<?=$uuid?>">
 							<i class="fa fa-spinner fa-spin text-muted"></i>
@@ -105,7 +116,7 @@ if (!empty($instances)):
 else:
 ?>
 				<tr>
-					<td colspan="8">
+					<td colspan="6">
 						<?php print_info_box(gettext('No Xray instances configured. Click "Add Instance" below to create one.'), 'warning', null); ?>
 					</td>
 				</tr>

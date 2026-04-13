@@ -12,6 +12,148 @@ require_once('interfaces.inc');
 require_once('filter.inc');
 require_once('util.inc');
 
+define('XRAY_DEFAULT_GROUP_UUID', '00000000-0000-4000-8000-000000000001');
+
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+
+function xray_sanitize_uuid(string $raw): string
+{
+    $clean = preg_replace('/[^0-9a-fA-F\-]/', '', $raw);
+    return strlen($clean) === 36 ? $clean : '';
+}
+
+/**
+ * Build the standard four-tab navigation array.
+ *
+ * @param  string $active  One of: 'connections', 'instances', 'settings', 'diagnostics'
+ * @return array
+ */
+function xray_build_tab_array(string $active): array
+{
+    return [
+        [gettext('Connections'), $active === 'connections', '/xray/xray_connections.php'],
+        [gettext('Instances'),   $active === 'instances',   '/xray/xray_instances.php'],
+        [gettext('Settings'),    $active === 'settings',    '/xray/xray_settings.php'],
+        [gettext('Diagnostics'), $active === 'diagnostics', '/xray/xray_diagnostics.php'],
+    ];
+}
+
+function xray_connection_mode_label(array $conn): string
+{
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
+    $json = trim($conn['custom_config'] ?? '');
+
+    if ($json === '') {
+        $json = xray_wizard_fields_to_json($conn);
+    }
+
+    if ($json === '') {
+        return 'Custom JSON';
+    }
+
+    $fields = xray_parse_config_json($json);
+
+    if (!($fields['recognized'] ?? false)) {
+        return 'Custom JSON';
+    }
+
+    $proto    = $fields['protocol'] ?? 'vless';
+    $network  = $fields['network']  ?? 'raw';
+    $security = $fields['security'] ?? 'none';
+
+    $netLabel = $network === 'raw' ? 'TCP' : strtoupper($network);
+    $secLabel = $security !== 'none' ? ' + ' . $security : '';
+
+    return strtoupper($proto) . ' (' . $netLabel . $secLabel . ')';
+}
+
+/**
+ * Return "host:port" for display in the connections table.
+ * Reads from custom_config JSON if available, falls back to wizard fields.
+ */
+function xray_connection_server_label(array $conn): string
+{
+    $json = trim($conn['custom_config'] ?? '');
+
+    if ($json !== '') {
+        require_once(dirname(__FILE__) . '/xray_vless.inc');
+        $fields = xray_parse_config_json($json);
+        if ($fields['recognized'] ?? false) {
+            $addr = $fields['server_address'] ?? '';
+            $port = $fields['server_port']    ?? '';
+            if ($addr !== '') {
+                return $addr . ':' . $port;
+            }
+        }
+    }
+
+    $addr = trim($conn['server_address'] ?? '');
+    if ($addr !== '') {
+        return $addr . ':' . ($conn['server_port'] ?? '443');
+    }
+
+    return '';
+}
+
+/**
+ * Build xray-core JSON from legacy wizard fields stored directly on a connection.
+ * Returns empty string if the connection has no wizard fields.
+ */
+function xray_wizard_fields_to_json(array $conn): string
+{
+    $server = trim($conn['server_address'] ?? '');
+    if ($server === '') {
+        return '';
+    }
+
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
+    $security = 'reality';
+    $network  = 'raw';
+    $flow     = $conn['flow'] ?? 'xtls-rprx-vision';
+
+    $f = [
+        'protocol'            => 'vless',
+        'server_address'      => $server,
+        'server_port'         => $conn['server_port'] ?? '443',
+        'vless_uuid'          => $conn['vless_uuid'] ?? '',
+        'encryption'          => 'none',
+        'flow'                => ($flow === '' || $flow === 'none') ? 'none' : 'xtls-rprx-vision',
+        'network'             => $network,
+        'security'            => $security,
+        'reality_sni'         => $conn['reality_sni'] ?? '',
+        'reality_fingerprint' => $conn['reality_fingerprint'] ?? 'chrome',
+        'reality_pubkey'      => $conn['reality_pubkey'] ?? '',
+        'reality_shortid'     => $conn['reality_shortid'] ?? '',
+        'reality_spiderx'     => $conn['reality_spiderx'] ?? '/',
+        'tls_sni'             => '',
+        'tls_fingerprint'     => 'chrome',
+        'tls_alpn'            => '',
+        'transport_path'      => '',
+        'transport_host'      => '',
+        'xhttp_mode'          => 'stream-one',
+        'grpc_service_name'   => '',
+        'mux'                 => '',
+    ];
+
+    return xray_build_config_json($f);
+}
+
+// ─── UUID generator ───────────────────────────────────────────────────────────
+
+function xray_generate_uuid(): string
+{
+    return sprintf(
+        '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+        mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+        mt_rand(0, 0xffff),
+        mt_rand(0, 0x0fff) | 0x4000,
+        mt_rand(0, 0x3fff) | 0x8000,
+        mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+    );
+}
+
 // ─── Config accessors ─────────────────────────────────────────────────────────
 
 function xray_get_global_config(): array
@@ -96,6 +238,234 @@ function xray_delete_instance(string $uuid): void
     xray_unregister_tun_interface_by_uuid($uuid);
 
     write_config('Xray: delete instance ' . $uuid);
+}
+
+// ─── Group CRUD ──────────────────────────────────────────────────────────────
+
+function xray_get_groups(): array
+{
+    global $config;
+    return $config['installedpackages']['xraygroups']['config'] ?? [];
+}
+
+function xray_get_group_by_uuid(string $uuid): ?array
+{
+    foreach (xray_get_groups() as $group) {
+        if (($group['uuid'] ?? '') === $uuid) {
+            return $group;
+        }
+    }
+    return null;
+}
+
+function xray_save_group(array $group): void
+{
+    global $config;
+
+    if (!isset($config['installedpackages']['xraygroups']['config'])) {
+        $config['installedpackages']['xraygroups']['config'] = [];
+    }
+
+    $groups = &$config['installedpackages']['xraygroups']['config'];
+    $uuid   = $group['uuid'] ?? '';
+    $found  = false;
+
+    foreach ($groups as $idx => $g) {
+        if (($g['uuid'] ?? '') === $uuid) {
+            $groups[$idx] = $group;
+            $found = true;
+            break;
+        }
+    }
+
+    if (!$found) {
+        $groups[] = $group;
+    }
+
+    write_config('Xray: save group ' . $uuid);
+}
+
+function xray_delete_group(string $uuid): string
+{
+    global $config;
+
+    if ($uuid === XRAY_DEFAULT_GROUP_UUID) {
+        return 'Cannot delete the Default group.';
+    }
+
+    $connections = xray_get_connections_by_group($uuid);
+    foreach ($connections as $conn) {
+        $connUuid = $conn['uuid'] ?? '';
+        if ($connUuid === '') {
+            continue;
+        }
+        $blocking = [];
+        foreach (xray_get_instances() as $inst) {
+            if (($inst['connection_uuid'] ?? '') === $connUuid) {
+                $blocking[] = $inst['name'] ?? $inst['uuid'];
+            }
+        }
+        if (!empty($blocking)) {
+            return 'Connection "' . ($conn['name'] ?? $connUuid) . '" is used by instance(s): ' . implode(', ', $blocking) . '.';
+        }
+    }
+
+    $remaining = [];
+    foreach (xray_get_connections() as $conn) {
+        if (($conn['group_uuid'] ?? '') !== $uuid) {
+            $remaining[] = $conn;
+        }
+    }
+    xray_save_connections($remaining);
+
+    if (!isset($config['installedpackages']['xraygroups']['config'])) {
+        return '';
+    }
+
+    $groups  = $config['installedpackages']['xraygroups']['config'];
+    $updated = [];
+    foreach ($groups as $g) {
+        if (($g['uuid'] ?? '') !== $uuid) {
+            $updated[] = $g;
+        }
+    }
+    $config['installedpackages']['xraygroups']['config'] = $updated;
+    write_config('Xray: delete group ' . $uuid);
+    return '';
+}
+
+// ─── Connection CRUD (JSON file storage — avoids pfSense XML size limits) ────
+
+require_once(dirname(__FILE__) . '/xray_connections.inc');
+
+function xray_delete_connection(string $uuid): string
+{
+    $blocking = [];
+    foreach (xray_get_instances() as $inst) {
+        if (($inst['connection_uuid'] ?? '') === $uuid) {
+            $blocking[] = $inst['name'] ?? $inst['uuid'];
+        }
+    }
+    if (!empty($blocking)) {
+        return 'Connection is used by instance(s): ' . implode(', ', $blocking) . '.';
+    }
+
+    $connections = xray_get_connections();
+    $updated     = [];
+    foreach ($connections as $conn) {
+        if (($conn['uuid'] ?? '') !== $uuid) {
+            $updated[] = $conn;
+        }
+    }
+    xray_save_connections($updated);
+    return '';
+}
+
+function xray_get_connection_for_instance(array $inst): ?array
+{
+    $mode = $inst['connection_mode'] ?? 'fixed';
+
+    if ($mode === 'fixed') {
+        $connUuid = $inst['connection_uuid'] ?? '';
+        if ($connUuid === '') {
+            return null;
+        }
+        return xray_get_connection_by_uuid($connUuid);
+    }
+
+    $activeUuid = $inst['active_connection_uuid'] ?? '';
+    if ($activeUuid !== '') {
+        $conn = xray_get_connection_by_uuid($activeUuid);
+        if ($conn !== null) {
+            return $conn;
+        }
+    }
+
+    $groupUuid = $inst['connection_group_uuid'] ?? '';
+    if ($groupUuid === '') {
+        return null;
+    }
+
+    $connections = xray_get_connections_by_group($groupUuid);
+    return !empty($connections) ? $connections[0] : null;
+}
+
+// ─── Migration: old instances → connections ───────────────────────────────────
+
+function xray_migrate_instances_to_connections(): void
+{
+    global $config;
+
+    // Step 1: migrate connections stored in XML config to JSON file
+    $xmlConns = $config['installedpackages']['xrayconnections']['config'] ?? [];
+    if (!empty($xmlConns) && !file_exists(XRAY_CONNECTIONS_FILE)) {
+        if (isset($xmlConns['uuid'])) {
+            $xmlConns = [$xmlConns];
+        }
+        xray_save_connections(array_values($xmlConns));
+        unset($config['installedpackages']['xrayconnections']);
+        write_config('Xray: migrated connections from XML to JSON file');
+    }
+
+    // Step 2: migrate old-style instances (with protocol fields) to connections
+    $jsonConns = xray_get_connections();
+    $instances = xray_get_instances();
+    if (empty($instances)) {
+        return;
+    }
+
+    $hasProtocolFields = false;
+    foreach ($instances as $inst) {
+        if (isset($inst['server_address']) && $inst['server_address'] !== '') {
+            $hasProtocolFields = true;
+            break;
+        }
+    }
+    if (!$hasProtocolFields) {
+        return;
+    }
+
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
+    $newConns = $jsonConns;
+    foreach ($instances as $idx => $inst) {
+        if (empty($inst['server_address'])) {
+            continue;
+        }
+
+        $connUuid = xray_generate_uuid();
+
+        $customConfig = trim($inst['custom_config'] ?? '');
+        if ($customConfig === '') {
+            $customConfig = xray_wizard_fields_to_json($inst);
+        }
+
+        $newConns[] = [
+            'uuid'          => $connUuid,
+            'group_uuid'    => XRAY_DEFAULT_GROUP_UUID,
+            'name'          => $inst['name'] ?? 'Migrated connection',
+            'custom_config' => $customConfig,
+            'test_result'   => '',
+        ];
+
+        $config['installedpackages']['xrayinstances']['config'][$idx]['connection_mode']        = 'fixed';
+        $config['installedpackages']['xrayinstances']['config'][$idx]['connection_uuid']        = $connUuid;
+        $config['installedpackages']['xrayinstances']['config'][$idx]['connection_group_uuid']  = '';
+        $config['installedpackages']['xrayinstances']['config'][$idx]['active_connection_uuid'] = '';
+        $config['installedpackages']['xrayinstances']['config'][$idx]['webhook_url']            = '';
+
+        foreach (['config_mode', 'server_address', 'server_port', 'vless_uuid', 'flow',
+                  'reality_sni', 'reality_pubkey', 'reality_shortid', 'reality_fingerprint', 'custom_config'] as $field) {
+            unset($config['installedpackages']['xrayinstances']['config'][$idx][$field]);
+        }
+    }
+
+    $config['installedpackages']['xrayinstances']['config'] = array_values(
+        $config['installedpackages']['xrayinstances']['config']
+    );
+
+    xray_save_connections($newConns);
+    write_config('Xray: migrated instances to connections');
 }
 
 // ─── TUN interface registration ───────────────────────────────────────────────
@@ -221,6 +591,42 @@ EOT;
         '*', '*', '*', '*', '*',
         'root'
     );
+
+    install_cron_job(
+        '/usr/local/bin/php /usr/local/scripts/xray/xray-subscription-autoupdate.php',
+        true,
+        '*/30', '*', '*', '*', '*',
+        'root'
+    );
+
+    xray_bootstrap_default_group();
+    xray_migrate_instances_to_connections();
+}
+
+function xray_bootstrap_default_group(): void
+{
+    global $config;
+
+    $groups = xray_get_groups();
+    foreach ($groups as $g) {
+        if (($g['uuid'] ?? '') === XRAY_DEFAULT_GROUP_UUID) {
+            return;
+        }
+    }
+
+    if (!isset($config['installedpackages']['xraygroups']['config'])) {
+        $config['installedpackages']['xraygroups']['config'] = [];
+    }
+
+    array_unshift($config['installedpackages']['xraygroups']['config'], [
+        'uuid'       => XRAY_DEFAULT_GROUP_UUID,
+        'name'       => 'Default',
+        'type'       => 'manual',
+        'sub_url'    => '',
+        'autoupdate' => '',
+    ]);
+
+    write_config('Xray: bootstrap Default group');
 }
 
 function xray_deinstall(): void
@@ -246,6 +652,11 @@ function xray_deinstall(): void
 
     install_cron_job(
         '/usr/local/bin/php /usr/local/scripts/xray/xray-watchdog.php',
+        false
+    );
+
+    install_cron_job(
+        '/usr/local/bin/php /usr/local/scripts/xray/xray-subscription-autoupdate.php',
         false
     );
 

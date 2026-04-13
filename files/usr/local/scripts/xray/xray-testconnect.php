@@ -53,8 +53,10 @@ $proxy   = $connectAddr . ':' . $port;
 $target  = 'https://1.1.1.1';
 $timeout = '10';
 
+$curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+
 exec(
-    '/usr/local/bin/curl'
+    $curlBin
     . ' --socks5 ' . escapeshellarg($proxy)
     . ' -s -L -o /dev/null'
     . ' -w %{http_code}'

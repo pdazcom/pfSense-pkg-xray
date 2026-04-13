@@ -12,6 +12,7 @@ set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear' . PATH_SE
 require_once('globals.inc');
 require_once('config.inc');
 require_once('config.lib.inc');
+require_once('/usr/local/pkg/xray/includes/xray_connections.inc');
 
 $inst_uuid = isset($argv[1]) ? trim($argv[1]) : '';
 $inst_uuid = preg_replace('/[^0-9a-fA-F\-]/', '', $inst_uuid);
@@ -45,7 +46,20 @@ if ($inst === null) {
 $tunIface  = $inst['tun_interface'] ?? 'proxytun0';
 $xrayPid   = "/var/run/xray_core_{$inst_uuid}.pid";
 $t2sPid    = "/var/run/tun2socks_{$inst_uuid}.pid";
-$serverAddr = $inst['server_address'] ?? '';
+
+$serverAddr = '';
+$connUuid   = $inst['connection_uuid'] ?? ($inst['active_connection_uuid'] ?? '');
+if ($connUuid !== '') {
+    $conn = xray_get_connection_by_uuid($connUuid);
+    $serverAddr = $conn['server_address'] ?? '';
+}
+if ($serverAddr === '') {
+    $groupUuid = $inst['connection_group_uuid'] ?? '';
+    if ($groupUuid !== '') {
+        $groupConns = xray_get_connections_by_group($groupUuid);
+        $serverAddr = $groupConns[0]['server_address'] ?? '';
+    }
+}
 
 // ─── Process uptime ───────────────────────────────────────────────────────────
 function proc_uptime(string $pidfile): ?int
