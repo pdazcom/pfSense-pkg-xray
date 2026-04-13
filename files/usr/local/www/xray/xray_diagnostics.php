@@ -1,68 +1,27 @@
 <?php
+/*
+ * xray_diagnostics.php
+ *
+ * Copyright (c) 2026 Konstantin A.
+ * All rights reserved.
+ *
+ * Licensed under the BSD 2-Clause License.
+ */
+
+##|+PRIV
+##|*IDENT=page-vpn-xray-diagnostics
+##|*NAME=VPN: Xray: Diagnostics
+##|*DESCR=Allow access to the 'VPN: Xray: Diagnostics' page.
+##|*MATCH=xray_diagnostics.php*
+##|-PRIV
 
 require_once('functions.inc');
 require_once('guiconfig.inc');
 require_once('xray/includes/xray.inc');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
-    $uuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_POST['uuid'] ?? '');
-    if (strlen($uuid) < 36) {
-        $uuid = '';
-    }
-
-    header('Content-Type: application/json; charset=utf-8');
-
-    switch ($_POST['act']) {
-
-        case 'ifstats':
-            if ($uuid === '') {
-                echo json_encode(['error' => 'No instance UUID provided']);
-                exit;
-            }
-            $out = [];
-            exec('/usr/local/bin/php /usr/local/scripts/xray/xray-ifstats.php ' . escapeshellarg($uuid) . ' 2>/dev/null', $out);
-            $json = implode('', $out);
-            $data = json_decode($json, true);
-            echo ($data !== null) ? $json : json_encode(['error' => 'Failed to get interface stats']);
-            exit;
-
-        case 'testconnect':
-            if ($uuid === '') {
-                echo json_encode(['result' => 'failed', 'http_code' => 0, 'error' => 'No instance UUID provided']);
-                exit;
-            }
-            $out = [];
-            exec('/usr/local/bin/php /usr/local/scripts/xray/xray-testconnect.php ' . escapeshellarg($uuid) . ' 2>/dev/null', $out, $rc);
-            $code = (int)trim(implode('', $out));
-            echo json_encode([
-                'result'    => ($code >= 200 && $code < 400) ? 'ok' : 'failed',
-                'http_code' => $code,
-            ]);
-            exit;
-
-        case 'log':
-            $lines = [];
-            exec('/usr/bin/tail -n 200 /var/log/xray-core.log 2>/dev/null', $lines);
-            echo json_encode(['log' => implode("\n", $lines)]);
-            exit;
-
-        case 'watchdoglog':
-            $lines = [];
-            exec('/usr/bin/tail -n 100 /var/log/xray-watchdog.log 2>/dev/null', $lines);
-            echo json_encode(['log' => implode("\n", $lines)]);
-            exit;
-    }
-
-    echo json_encode(['error' => 'Unknown action']);
-    exit;
-}
-
 $instances = xray_get_instances();
 
-$selectedUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_GET['uuid'] ?? '');
-if (strlen($selectedUuid) < 36) {
-    $selectedUuid = '';
-}
+$selectedUuid = xray_sanitize_uuid($_GET['uuid'] ?? '');
 
 if ($selectedUuid === '' && !empty($instances)) {
     $selectedUuid = $instances[0]['uuid'] ?? '';
@@ -71,11 +30,7 @@ if ($selectedUuid === '' && !empty($instances)) {
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Diagnostics')];
 $pglinks  = ['', '/xray/xray_instances.php', '/xray/xray_instances.php', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Connections'), false, '/xray/xray_connections.php'];
-$tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), true,  '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('diagnostics');
 
 include('head.inc');
 
@@ -152,18 +107,19 @@ display_top_tabs($tab_array);
                 </a>
             </li>
         </ul>
+        <style>.xray-log-pre{max-height:400px;overflow-y:auto;font-size:11px;margin-top:5px}</style>
         <div class="tab-content" style="margin-top:10px; padding: 10px;">
             <div id="tab-xraylog" class="tab-pane active">
                 <button class="btn btn-primary btn-xs" id="load-xraylog-btn">
                     <i class="fa fa-download icon-embed-btn"></i><?= gettext('Load Log') ?>
                 </button>
-                <pre id="xraylog-content" style="max-height:400px;overflow-y:auto;font-size:11px;margin-top:5px"><?= gettext('(click "Load Log" to fetch last 200 lines)') ?></pre>
+                <pre id="xraylog-content" class="xray-log-pre"><?= gettext('(click "Load Log" to fetch last 200 lines)') ?></pre>
             </div>
             <div id="tab-watchdoglog" class="tab-pane">
                 <button class="btn btn-primary btn-xs" id="load-watchdoglog-btn">
                     <i class="fa fa-download icon-embed-btn"></i><?= gettext('Load Log') ?>
                 </button>
-                <pre id="watchdoglog-content" style="max-height:400px;overflow-y:auto;font-size:11px;margin-top:5px"><?= gettext('(click "Load Log" to fetch last 100 lines)') ?></pre>
+                <pre id="watchdoglog-content" class="xray-log-pre"><?= gettext('(click "Load Log" to fetch last 100 lines)') ?></pre>
             </div>
         </div>
     </div>
@@ -176,14 +132,13 @@ display_top_tabs($tab_array);
 events.push(function() {
 
     var selectedUuid = '<?= htmlspecialchars($selectedUuid, ENT_QUOTES, 'UTF-8') ?>';
+    var ajaxUrl = '/xray/xray_ajax.php';
 
     function ajaxPost(action, uuid, cb) {
-        var postData = { act: action, uuid: uuid };
-        postData[csrfMagicName] = csrfMagicToken;
         $.ajax({
-            url:      '/xray/xray_diagnostics.php',
-            method:   'POST',
-            data:     postData,
+            url:      ajaxUrl,
+            type:     'post',
+            data:     { action: action, uuid: uuid },
             dataType: 'json',
             success:  cb,
             error: function() { cb(null); }

@@ -18,10 +18,7 @@ require_once('xray/includes/xray.inc');
 xray_bootstrap_default_group();
 xray_migrate_instances_to_connections();
 
-$activeGroupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_GET['group_uuid'] ?? '');
-if (strlen($activeGroupUuid) < 36) {
-    $activeGroupUuid = '';
-}
+$activeGroupUuid = xray_sanitize_uuid($_GET['group_uuid'] ?? '');
 
 $groups = xray_get_groups();
 
@@ -32,11 +29,7 @@ if ($activeGroupUuid === '' && !empty($groups)) {
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Connections')];
 $pglinks  = ['', '/xray/xray_instances.php', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Connections'), true,  '/xray/xray_connections.php'];
-$tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('connections');
 
 include('head.inc');
 
@@ -199,6 +192,8 @@ function xray_render_test_result(string $json): string
 //<![CDATA[
 events.push(function() {
 
+    var ajaxUrl = '/xray/xray_ajax.php';
+
     function showGroupStatus(msg, cls) {
         $('.xray-group-action-status').text(msg).removeClass().addClass('xray-group-action-status ' + cls);
     }
@@ -220,7 +215,7 @@ events.push(function() {
         $cell.html('<i class="fa fa-spinner fa-spin text-muted"></i>');
 
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'urltest', connection_uuid: connUuid },
             dataType: 'json',
@@ -246,7 +241,7 @@ events.push(function() {
 
     function urltestGroupPoll(groupUuid) {
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'urltest_group_status', group_uuid: groupUuid },
             dataType: 'json',
@@ -280,7 +275,7 @@ events.push(function() {
         });
 
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'urltest_group_start', group_uuid: groupUuid },
             dataType: 'json',
@@ -306,7 +301,7 @@ events.push(function() {
         var groupUuid = $(this).data('group-uuid');
         showGroupStatus('<?=gettext('Stopping...')?>', 'text-muted xray-group-action-status');
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'urltest_group_stop', group_uuid: groupUuid },
             dataType: 'json',
@@ -323,7 +318,7 @@ events.push(function() {
         showGroupStatus('<?=gettext('Updating subscription...')?>', 'text-muted xray-group-action-status');
 
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'update_subscription', group_uuid: groupUuid },
             dataType: 'json',
@@ -350,7 +345,7 @@ events.push(function() {
         if (!confirm('<?=gettext('Delete connection')?> "' + connName + '"?')) { return; }
 
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'delete_connection', uuid: connUuid },
             dataType: 'json',
@@ -370,7 +365,7 @@ events.push(function() {
         if (!confirm('<?=gettext('Delete group')?> "' + groupName + '"? <?=gettext('All connections in this group will be deleted.')?>')) { return; }
 
         $.ajax({
-            url:      '/xray/xray_ajax.php',
+            url:      ajaxUrl,
             type:     'post',
             data:     { action: 'delete_group', uuid: groupUuid },
             dataType: 'json',

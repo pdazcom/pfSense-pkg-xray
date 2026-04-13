@@ -21,13 +21,7 @@ if ($action === '') {
     exit;
 }
 
-$uuid = trim($_POST['uuid'] ?? $_GET['uuid'] ?? '');
-$uuid = preg_replace('/[^0-9a-fA-F\-]/', '', $uuid);
-if (strlen($uuid) < 36) {
-    $uuid = '';
-}
-
-
+$uuid = xray_sanitize_uuid(trim($_POST['uuid'] ?? $_GET['uuid'] ?? ''));
 
 // ─── Dispatcher ───────────────────────────────────────────────────────────────
 switch ($action) {
@@ -199,9 +193,8 @@ switch ($action) {
         break;
 
     case 'urltest':
-        $connUuid = trim($_POST['connection_uuid'] ?? $_GET['connection_uuid'] ?? '');
-        $connUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $connUuid);
-        if (strlen($connUuid) < 36) {
+        $connUuid = xray_sanitize_uuid(trim($_POST['connection_uuid'] ?? $_GET['connection_uuid'] ?? ''));
+        if ($connUuid === '') {
             echo json_encode(['status' => 'unavailable', 'error' => 'Invalid connection UUID']);
             break;
         }
@@ -213,9 +206,8 @@ switch ($action) {
         break;
 
     case 'urltest_group_start':
-        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
-        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
-        if (strlen($groupUuid) < 36) {
+        $groupUuid = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? ''));
+        if ($groupUuid === '') {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }
@@ -227,9 +219,8 @@ switch ($action) {
         break;
 
     case 'urltest_group_status':
-        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
-        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
-        if (strlen($groupUuid) < 36) {
+        $groupUuid = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? ''));
+        if ($groupUuid === '') {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }
@@ -244,9 +235,8 @@ switch ($action) {
         break;
 
     case 'urltest_group_stop':
-        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
-        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
-        if (strlen($groupUuid) < 36) {
+        $groupUuid = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? ''));
+        if ($groupUuid === '') {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }
@@ -261,9 +251,8 @@ switch ($action) {
         break;
 
     case 'update_subscription':
-        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
-        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
-        if (strlen($groupUuid) < 36) {
+        $groupUuid = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? ''));
+        if ($groupUuid === '') {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }
@@ -284,9 +273,8 @@ switch ($action) {
         break;
 
     case 'delete_group':
-        $groupUuid = $uuid !== '' ? $uuid : trim($_POST['group_uuid'] ?? '');
-        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
-        if (strlen($groupUuid) < 36) {
+        $groupUuid = $uuid !== '' ? $uuid : xray_sanitize_uuid(trim($_POST['group_uuid'] ?? ''));
+        if ($groupUuid === '') {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }

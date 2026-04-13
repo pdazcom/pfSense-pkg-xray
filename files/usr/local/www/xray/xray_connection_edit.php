@@ -1,4 +1,19 @@
 <?php
+/*
+ * xray_connection_edit.php
+ *
+ * Copyright (c) 2026 Konstantin A.
+ * All rights reserved.
+ *
+ * Licensed under the BSD 2-Clause License.
+ */
+
+##|+PRIV
+##|*IDENT=page-vpn-xray-connection-edit
+##|*NAME=VPN: Xray: Edit Connection
+##|*DESCR=Allow access to the 'VPN: Xray: Edit Connection' page.
+##|*MATCH=xray_connection_edit.php*
+##|-PRIV
 
 require_once('functions.inc');
 require_once('guiconfig.inc');
@@ -6,16 +21,9 @@ require_once('xray/includes/xray.inc');
 require_once('xray/includes/xray_validate.inc');
 require_once('xray/includes/xray_vless.inc');
 
-$editUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_GET['uuid'] ?? $_POST['uuid'] ?? '');
-if (strlen($editUuid) < 36) {
-    $editUuid = '';
-}
-$isNew = ($editUuid === '');
-
-$presetGroupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_GET['group_uuid'] ?? '');
-if (strlen($presetGroupUuid) < 36) {
-    $presetGroupUuid = '';
-}
+$editUuid        = xray_sanitize_uuid($_GET['uuid'] ?? $_POST['uuid'] ?? '');
+$isNew           = ($editUuid === '');
+$presetGroupUuid = xray_sanitize_uuid($_GET['group_uuid'] ?? '');
 
 $defaults = [
     'name'                => '',
@@ -124,11 +132,7 @@ $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Connections'),
             $isNew ? gettext('Add Connection') : gettext('Edit Connection')];
 $pglinks = ['', '/xray/xray_instances.php', '/xray/xray_connections.php', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Connections'), true,  '/xray/xray_connections.php'];
-$tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('connections');
 
 include('head.inc');
 

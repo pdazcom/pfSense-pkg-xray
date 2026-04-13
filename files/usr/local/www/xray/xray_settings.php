@@ -45,11 +45,7 @@ if ($_POST && isset($_POST['act']) && $_POST['act'] === 'save') {
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Settings')];
 $pglinks  = ['', '/xray/xray_instances.php', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Connections'), false, '/xray/xray_connections.php'];
-$tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    true,  '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('settings');
 
 include('head.inc');
 

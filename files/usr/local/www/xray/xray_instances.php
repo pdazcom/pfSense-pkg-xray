@@ -20,8 +20,8 @@ require_once('guiconfig.inc');
 require_once('xray/includes/xray.inc');
 
 if ($_POST && isset($_POST['act']) && $_POST['act'] === 'delete') {
-	$delUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $_POST['uuid'] ?? '');
-	if (strlen($delUuid) === 36) {
+	$delUuid = xray_sanitize_uuid($_POST['uuid'] ?? '');
+	if ($delUuid !== '') {
 		xray_delete_instance($delUuid);
 		xray_resync();
 	}
@@ -65,11 +65,7 @@ function xray_instance_connection_label(array $inst, array $allConns, array $all
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Instances')];
 $pglinks  = ['', '@self', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Connections'), false, '/xray/xray_connections.php'];
-$tab_array[] = [gettext('Instances'),   true,  '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('instances');
 
 include('head.inc');
 

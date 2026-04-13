@@ -14,6 +14,30 @@ require_once('util.inc');
 
 define('XRAY_DEFAULT_GROUP_UUID', '00000000-0000-4000-8000-000000000001');
 
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+
+function xray_sanitize_uuid(string $raw): string
+{
+    $clean = preg_replace('/[^0-9a-fA-F\-]/', '', $raw);
+    return strlen($clean) === 36 ? $clean : '';
+}
+
+/**
+ * Build the standard four-tab navigation array.
+ *
+ * @param  string $active  One of: 'connections', 'instances', 'settings', 'diagnostics'
+ * @return array
+ */
+function xray_build_tab_array(string $active): array
+{
+    return [
+        [gettext('Connections'), $active === 'connections', '/xray/xray_connections.php'],
+        [gettext('Instances'),   $active === 'instances',   '/xray/xray_instances.php'],
+        [gettext('Settings'),    $active === 'settings',    '/xray/xray_settings.php'],
+        [gettext('Diagnostics'), $active === 'diagnostics', '/xray/xray_diagnostics.php'],
+    ];
+}
+
 // ─── UUID generator ───────────────────────────────────────────────────────────
 
 function xray_generate_uuid(): string
