@@ -208,7 +208,15 @@ $sectionNetwork->addInput(new Form_Input(
     'text',
     $pconfig['socks5_listen'],
     ['placeholder' => '127.0.0.1']
-))->setHelp(gettext('IPv4 address xray-core listens on for SOCKS5.'));
+))->setHelp(gettext('IPv4 address xray-core listens on for SOCKS5. Use 127.0.0.1 to keep the proxy local. Setting a LAN IP exposes the unauthenticated SOCKS5 proxy to that network — ensure firewall rules restrict access.'));
+
+$sectionNetwork->addInput(new Form_StaticText(
+    '',
+    '<div id="socks5-warning" class="alert alert-warning" style="display:none;margin-bottom:0">' .
+    '<i class="fa fa-exclamation-triangle"></i> ' .
+    gettext('Warning: SOCKS5 will be exposed on the network without authentication. Make sure pfSense firewall rules block unauthorized access to this port.') .
+    '</div>'
+));
 
 $sectionNetwork->addInput(new Form_Input(
     'socks5_port',
@@ -279,6 +287,19 @@ events.push(function() {
 
     $('#connection_mode').change(updateConnectionMode);
     updateConnectionMode();
+
+    function updateSocks5Warning() {
+        var addr = $('#socks5_listen').val().trim();
+        var isLocal = (addr === '' || addr === '127.0.0.1' || /^127\./.test(addr) || addr === '0.0.0.0');
+        if (isLocal) {
+            $('#socks5-warning').hide();
+        } else {
+            $('#socks5-warning').show();
+        }
+    }
+
+    $('#socks5_listen').on('input change', updateSocks5Warning);
+    updateSocks5Warning();
 
     $('#saveform').click(function() {
         $(form).submit();
