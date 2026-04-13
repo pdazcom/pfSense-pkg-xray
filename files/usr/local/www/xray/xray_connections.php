@@ -139,16 +139,15 @@ function xray_render_test_result(string $json): string
                 <tbody>
 <?php if (!empty($connections)): ?>
 <?php foreach ($connections as $conn):
-    $connUuid   = htmlspecialchars($conn['uuid'], ENT_QUOTES, 'UTF-8');
-    $connName   = htmlspecialchars($conn['name'] ?? '', ENT_QUOTES, 'UTF-8');
-    $serverAddr = htmlspecialchars($conn['server_address'] ?? '', ENT_QUOTES, 'UTF-8');
-    $serverPort = (int)($conn['server_port'] ?? 443);
-    $mode       = ($conn['config_mode'] ?? 'wizard') === 'custom' ? 'Custom JSON' : 'VLESS/Reality';
-    $testResult = $conn['test_result'] ?? '';
+    $connUuid    = htmlspecialchars($conn['uuid'], ENT_QUOTES, 'UTF-8');
+    $connName    = htmlspecialchars($conn['name'] ?? '', ENT_QUOTES, 'UTF-8');
+    $serverLabel = htmlspecialchars(xray_connection_server_label($conn), ENT_QUOTES, 'UTF-8');
+    $mode        = xray_connection_mode_label($conn);
+    $testResult  = $conn['test_result'] ?? '';
 ?>
                     <tr>
                         <td><?=$connName?></td>
-                        <td><code><?=$serverAddr?>:<?=$serverPort?></code></td>
+                        <td><?=$serverLabel !== '' ? '<code>' . $serverLabel . '</code>' : '<span class="text-muted">&mdash;</span>'?></td>
                         <td><?=htmlspecialchars($mode, ENT_QUOTES, 'UTF-8')?></td>
                         <td class="xray-test-result" data-conn-uuid="<?=$connUuid?>">
                             <?=xray_render_test_result($testResult)?>

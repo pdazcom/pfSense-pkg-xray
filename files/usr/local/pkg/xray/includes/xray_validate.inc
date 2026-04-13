@@ -176,9 +176,32 @@ function xray_validate_connection(array $post, ?string $editUuid): void
             $input_errors[] = 'VLESS UUID must be in xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx format.';
         }
 
-        $pubkey = trim($post['reality_pubkey'] ?? '');
-        if ($pubkey === '') {
-            $input_errors[] = 'Reality public key is required in wizard mode.';
+        $allowedNetworks = ['raw', 'xhttp', 'ws', 'grpc', 'httpupgrade', 'h2'];
+        $network = $post['network'] ?? 'raw';
+        if (!in_array($network, $allowedNetworks, true)) {
+            $input_errors[] = 'Network must be one of: ' . implode(', ', $allowedNetworks) . '.';
+        }
+
+        $allowedSecurity = ['none', 'tls', 'reality'];
+        $security = $post['security'] ?? 'reality';
+        if (!in_array($security, $allowedSecurity, true)) {
+            $input_errors[] = 'Security must be one of: ' . implode(', ', $allowedSecurity) . '.';
+        }
+
+        if ($security === 'reality') {
+            $pubkey = trim($post['reality_pubkey'] ?? '');
+            if ($pubkey === '') {
+                $input_errors[] = 'Reality public key is required when security is "reality".';
+            }
+        }
+
+        $tlsAlpn = trim($post['tls_alpn'] ?? '');
+        if ($tlsAlpn !== '') {
+            foreach (array_map('trim', explode(',', $tlsAlpn)) as $alpnVal) {
+                if (!preg_match('/^[a-zA-Z0-9\/\.\-]+$/', $alpnVal)) {
+                    $input_errors[] = 'ALPN value "' . htmlspecialchars($alpnVal, ENT_QUOTES, 'UTF-8') . '" contains invalid characters.';
+                }
+            }
         }
     }
 

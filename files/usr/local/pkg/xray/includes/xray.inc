@@ -38,6 +38,108 @@ function xray_build_tab_array(string $active): array
     ];
 }
 
+function xray_connection_mode_label(array $conn): string
+{
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
+    $json = trim($conn['custom_config'] ?? '');
+
+    if ($json === '') {
+        $json = xray_wizard_fields_to_json($conn);
+    }
+
+    if ($json === '') {
+        return 'Custom JSON';
+    }
+
+    $fields = xray_parse_config_json($json);
+
+    if (!($fields['recognized'] ?? false)) {
+        return 'Custom JSON';
+    }
+
+    $proto    = $fields['protocol'] ?? 'vless';
+    $network  = $fields['network']  ?? 'raw';
+    $security = $fields['security'] ?? 'none';
+
+    $netLabel = $network === 'raw' ? 'TCP' : strtoupper($network);
+    $secLabel = $security !== 'none' ? ' + ' . $security : '';
+
+    return strtoupper($proto) . ' (' . $netLabel . $secLabel . ')';
+}
+
+/**
+ * Return "host:port" for display in the connections table.
+ * Reads from custom_config JSON if available, falls back to wizard fields.
+ */
+function xray_connection_server_label(array $conn): string
+{
+    $json = trim($conn['custom_config'] ?? '');
+
+    if ($json !== '') {
+        require_once(dirname(__FILE__) . '/xray_vless.inc');
+        $fields = xray_parse_config_json($json);
+        if ($fields['recognized'] ?? false) {
+            $addr = $fields['server_address'] ?? '';
+            $port = $fields['server_port']    ?? '';
+            if ($addr !== '') {
+                return $addr . ':' . $port;
+            }
+        }
+    }
+
+    $addr = trim($conn['server_address'] ?? '');
+    if ($addr !== '') {
+        return $addr . ':' . ($conn['server_port'] ?? '443');
+    }
+
+    return '';
+}
+
+/**
+ * Build xray-core JSON from legacy wizard fields stored directly on a connection.
+ * Returns empty string if the connection has no wizard fields.
+ */
+function xray_wizard_fields_to_json(array $conn): string
+{
+    $server = trim($conn['server_address'] ?? '');
+    if ($server === '') {
+        return '';
+    }
+
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
+    $security = 'reality';
+    $network  = 'raw';
+    $flow     = $conn['flow'] ?? 'xtls-rprx-vision';
+
+    $f = [
+        'protocol'            => 'vless',
+        'server_address'      => $server,
+        'server_port'         => $conn['server_port'] ?? '443',
+        'vless_uuid'          => $conn['vless_uuid'] ?? '',
+        'encryption'          => 'none',
+        'flow'                => ($flow === '' || $flow === 'none') ? 'none' : 'xtls-rprx-vision',
+        'network'             => $network,
+        'security'            => $security,
+        'reality_sni'         => $conn['reality_sni'] ?? '',
+        'reality_fingerprint' => $conn['reality_fingerprint'] ?? 'chrome',
+        'reality_pubkey'      => $conn['reality_pubkey'] ?? '',
+        'reality_shortid'     => $conn['reality_shortid'] ?? '',
+        'reality_spiderx'     => $conn['reality_spiderx'] ?? '/',
+        'tls_sni'             => '',
+        'tls_fingerprint'     => 'chrome',
+        'tls_alpn'            => '',
+        'transport_path'      => '',
+        'transport_host'      => '',
+        'xhttp_mode'          => 'stream-one',
+        'grpc_service_name'   => '',
+        'mux'                 => '',
+    ];
+
+    return xray_build_config_json($f);
+}
+
 // ─── UUID generator ───────────────────────────────────────────────────────────
 
 function xray_generate_uuid(): string
@@ -326,28 +428,27 @@ function xray_migrate_instances_to_connections(): void
         return;
     }
 
+    require_once(dirname(__FILE__) . '/xray_vless.inc');
+
     $newConns = $jsonConns;
     foreach ($instances as $idx => $inst) {
         if (empty($inst['server_address'])) {
             continue;
         }
 
-        $connUuid   = xray_generate_uuid();
+        $connUuid = xray_generate_uuid();
+
+        $customConfig = trim($inst['custom_config'] ?? '');
+        if ($customConfig === '') {
+            $customConfig = xray_wizard_fields_to_json($inst);
+        }
+
         $newConns[] = [
-            'uuid'                => $connUuid,
-            'group_uuid'          => XRAY_DEFAULT_GROUP_UUID,
-            'name'                => $inst['name'] ?? 'Migrated connection',
-            'config_mode'         => $inst['config_mode'] ?? 'wizard',
-            'server_address'      => $inst['server_address'] ?? '',
-            'server_port'         => $inst['server_port'] ?? '443',
-            'vless_uuid'          => $inst['vless_uuid'] ?? '',
-            'flow'                => $inst['flow'] ?? 'xtls-rprx-vision',
-            'reality_sni'         => $inst['reality_sni'] ?? '',
-            'reality_pubkey'      => $inst['reality_pubkey'] ?? '',
-            'reality_shortid'     => $inst['reality_shortid'] ?? '',
-            'reality_fingerprint' => $inst['reality_fingerprint'] ?? 'chrome',
-            'custom_config'       => $inst['custom_config'] ?? '',
-            'test_result'         => '',
+            'uuid'          => $connUuid,
+            'group_uuid'    => XRAY_DEFAULT_GROUP_UUID,
+            'name'          => $inst['name'] ?? 'Migrated connection',
+            'custom_config' => $customConfig,
+            'test_result'   => '',
         ];
 
         $config['installedpackages']['xrayinstances']['config'][$idx]['connection_mode']        = 'fixed';

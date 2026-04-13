@@ -93,17 +93,40 @@ function xray_parse_instance_array(array $inst, array $conn, bool $globalEnabled
     ];
     $loglevel = $levelMap[$rawLevel] ?? ($rawLevel ?: 'warning');
 
+    $security = $conn['security'] ?? 'reality';
+
     return [
         'enabled'                => $globalEnabled,
         'name'                   => $inst['name']                ?? 'default',
         'server'                 => $conn['server_address']      ?? '',
         'port'                   => (int)($conn['server_port']   ?? 443),
         'vless_uuid'             => $conn['vless_uuid']          ?? '',
+        'encryption'             => $conn['encryption']          ?? 'none',
         'flow'                   => $conn['flow']                ?? 'xtls-rprx-vision',
-        'sni'                    => $conn['reality_sni']         ?? '',
+        // transport
+        'network'                => $conn['network']             ?? 'raw',
+        'transport_path'         => $conn['transport_path']      ?? '',
+        'transport_host'         => $conn['transport_host']      ?? '',
+        'transport_headers'      => $conn['transport_headers']   ?? '',
+        'xhttp_mode'             => $conn['xhttp_mode']          ?? 'stream-one',
+        'grpc_service_name'      => $conn['grpc_service_name']   ?? '',
+        // security
+        'security'               => $security,
+        'tls_sni'                => $conn['tls_sni']             ?? '',
+        'tls_fingerprint'        => $conn['tls_fingerprint']     ?? 'chrome',
+        'tls_alpn'               => $conn['tls_alpn']            ?? '',
+        'sni'                    => $security === 'tls'
+                                     ? ($conn['tls_sni']        ?? '')
+                                     : ($conn['reality_sni']    ?? ''),
         'pubkey'                 => $conn['reality_pubkey']      ?? '',
         'shortid'                => $conn['reality_shortid']     ?? '',
-        'fingerprint'            => $conn['reality_fingerprint'] ?? 'chrome',
+        'fingerprint'            => $security === 'tls'
+                                     ? ($conn['tls_fingerprint'] ?? 'chrome')
+                                     : ($conn['reality_fingerprint'] ?? 'chrome'),
+        'reality_spiderx'        => $conn['reality_spiderx']     ?? '/',
+        // mux
+        'mux'                    => $conn['mux']                 ?? '',
+        // config
         'config_mode'            => ($conn['config_mode'] ?? 'wizard') ?: 'wizard',
         'custom_config'          => $conn['custom_config'] ?? '',
         'socks5_listen'          => ($inst['socks5_listen'] ?? '127.0.0.1') ?: '127.0.0.1',
@@ -158,7 +181,53 @@ function xray_get_config(string $inst_uuid = ''): array
 // ─── Build xray config array ─────────────────────────────────────────────────
 function xray_build_config_array(array $c): array
 {
-    $flow = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : $c['flow'];
+    $network  = $c['network']  ?? 'raw';
+    $security = $c['security'] ?? 'reality';
+    $flow     = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : ($c['flow'] ?? '');
+
+    if ($network !== 'raw') {
+        $flow = '';
+    }
+
+    $streamParams = [
+        'sni'         => $c['sni']      ?? '',
+        'fp'          => $c['fingerprint'] ?? 'chrome',
+        'pbk'         => $c['pubkey']   ?? '',
+        'sid'         => $c['shortid']  ?? '',
+        'spx'         => $c['reality_spiderx'] ?? '/',
+        'alpn'        => $c['tls_alpn'] ?? '',
+        'path'        => $c['transport_path']    ?? '',
+        'host'        => $c['transport_host']    ?? '',
+        'mode'        => $c['xhttp_mode']        ?? 'stream-one',
+        'serviceName' => $c['grpc_service_name'] ?? '',
+    ];
+
+    require_once('/usr/local/pkg/xray/includes/xray_vless.inc');
+    $streamSettings = xray_build_stream_settings($network, $security, $streamParams);
+
+    $outbound = [
+        'tag'      => 'proxy',
+        'protocol' => 'vless',
+        'settings' => [
+            'vnext' => [[
+                'address' => $c['server'],
+                'port'    => $c['port'],
+                'users'   => [[
+                    'id'         => $c['vless_uuid'],
+                    'encryption' => $c['encryption'] ?? 'none',
+                    'flow'       => $flow,
+                ]],
+            ]],
+        ],
+        'streamSettings' => $streamSettings,
+    ];
+
+    $mux = $c['mux'] ?? '';
+    if ($mux === 'enabled') {
+        $outbound['mux'] = ['enabled' => true,  'concurrency' => 8];
+    } elseif ($mux === 'disabled') {
+        $outbound['mux'] = ['enabled' => false, 'concurrency' => -1];
+    }
 
     $bypassRaw  = $c['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
     $bypassNets = array_values(array_filter(array_map('trim', explode(',', $bypassRaw))));
@@ -176,33 +245,7 @@ function xray_build_config_array(array $c): array
             'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen']],
         ]],
         'outbounds' => [
-            [
-                'tag'      => 'proxy',
-                'protocol' => 'vless',
-                'settings' => [
-                    'vnext' => [[
-                        'address' => $c['server'],
-                        'port'    => $c['port'],
-                        'users'   => [[
-                            'id'         => $c['vless_uuid'],
-                            'encryption' => 'none',
-                            'flow'       => $flow,
-                        ]],
-                    ]],
-                ],
-                'streamSettings' => [
-                    'network'         => 'tcp',
-                    'security'        => 'reality',
-                    'realitySettings' => [
-                        'serverName'  => $c['sni'],
-                        'fingerprint' => $c['fingerprint'],
-                        'show'        => false,
-                        'publicKey'   => $c['pubkey'],
-                        'shortId'     => $c['shortid'],
-                        'spiderX'     => '',
-                    ],
-                ],
-            ],
+            $outbound,
             ['tag' => 'direct', 'protocol' => 'freedom'],
         ],
         'routing' => [
