@@ -212,25 +212,52 @@ switch ($action) {
         echo ($data !== null) ? $json : json_encode(['status' => 'unavailable', 'error' => 'No output']);
         break;
 
-    case 'urltest_group':
+    case 'urltest_group_start':
         $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
         $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
         if (strlen($groupUuid) < 36) {
             echo json_encode(['error' => 'Invalid group UUID']);
             break;
         }
-        $connections = xray_get_connections_by_group($groupUuid);
-        $results = [];
-        foreach ($connections as $conn) {
-            $connUuid = $conn['uuid'] ?? '';
-            if ($connUuid === '') continue;
-            $out = [];
-            exec('/usr/local/bin/php /usr/local/scripts/xray/xray-urltest.php ' . escapeshellarg($connUuid) . ' 2>/dev/null', $out);
-            $json = implode('', $out);
-            $data = json_decode($json, true);
-            $results[$connUuid] = $data ?? ['status' => 'unavailable'];
+        $progressFile = '/tmp/xray-grptest-' . $groupUuid . '.json';
+        @unlink($progressFile);
+        exec('/usr/sbin/daemon -f /usr/local/bin/php /usr/local/scripts/xray/xray-urltest-group.php '
+            . escapeshellarg($groupUuid) . ' > /dev/null 2>&1 &');
+        echo json_encode(['status' => 'started']);
+        break;
+
+    case 'urltest_group_status':
+        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
+        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
+        if (strlen($groupUuid) < 36) {
+            echo json_encode(['error' => 'Invalid group UUID']);
+            break;
         }
-        echo json_encode(['results' => $results]);
+        $progressFile = '/tmp/xray-grptest-' . $groupUuid . '.json';
+        if (!file_exists($progressFile)) {
+            echo json_encode(['done' => false, 'results' => []]);
+            break;
+        }
+        $raw  = file_get_contents($progressFile);
+        $data = json_decode($raw, true);
+        echo ($data !== null) ? $raw : json_encode(['done' => false, 'results' => []]);
+        break;
+
+    case 'urltest_group_stop':
+        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
+        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
+        if (strlen($groupUuid) < 36) {
+            echo json_encode(['error' => 'Invalid group UUID']);
+            break;
+        }
+        $selfPidFile = '/tmp/xray-grptest-' . $groupUuid . '.pid';
+        if (file_exists($selfPidFile)) {
+            $pid = (int)trim(file_get_contents($selfPidFile));
+            if ($pid > 0) {
+                exec('/bin/kill -TERM ' . $pid . ' 2>/dev/null');
+            }
+        }
+        echo json_encode(['result' => 'ok']);
         break;
 
     case 'update_subscription':

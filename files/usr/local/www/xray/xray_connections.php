@@ -118,6 +118,10 @@ function xray_render_test_result(string $json): string
                             data-group-uuid="<?=$gUuid?>">
                         <i class="fa fa-bolt icon-embed-btn"></i><?=gettext('URL Test All')?>
                     </button>
+                    <button type="button" class="btn btn-danger btn-sm xray-btn-urltest-stop"
+                            data-group-uuid="<?=$gUuid?>" style="display:none">
+                        <i class="fa fa-stop icon-embed-btn"></i><?=gettext('Stop')?>
+                    </button>
                     <?php if (!$isDefault): ?>
                     <button type="button" class="btn btn-danger btn-sm xray-btn-delete-group"
                             data-group-uuid="<?=$gUuid?>"
@@ -225,8 +229,50 @@ events.push(function() {
         });
     });
 
+    var urltestGroupTimer = null;
+
+    function urltestGroupFinish(statusMsg, statusCls) {
+        clearInterval(urltestGroupTimer);
+        urltestGroupTimer = null;
+        $('.xray-btn-urltest-group').prop('disabled', false);
+        $('.xray-btn-urltest-stop').hide();
+        showGroupStatus(statusMsg, statusCls);
+        $('.xray-test-result').each(function() {
+            if ($(this).find('.fa-spinner').length) {
+                $(this).html('<span class="text-muted">&mdash;</span>');
+            }
+        });
+    }
+
+    function urltestGroupPoll(groupUuid) {
+        $.ajax({
+            url:      '/xray/xray_ajax.php',
+            type:     'post',
+            data:     { action: 'urltest_group_status', group_uuid: groupUuid },
+            dataType: 'json',
+            success: function(data) {
+                if (!data) { return; }
+                $.each(data.results || {}, function(connUuid, result) {
+                    if (result !== null) {
+                        var $cell = $('.xray-test-result[data-conn-uuid="' + connUuid + '"]');
+                        $cell.html(renderTestResult(result));
+                    }
+                });
+                if (data.done) {
+                    urltestGroupFinish('<?=gettext('Done.')?>', 'text-success xray-group-action-status');
+                }
+            },
+            error: function() {
+                urltestGroupFinish('<?=gettext('Error during test.')?>', 'text-danger xray-group-action-status');
+            }
+        });
+    }
+
     $('.xray-btn-urltest-group').on('click', function() {
         var groupUuid = $(this).data('group-uuid');
+        var $btn      = $(this);
+        $btn.prop('disabled', true);
+        $('.xray-btn-urltest-stop[data-group-uuid="' + groupUuid + '"]').show();
         showGroupStatus('<?=gettext('Testing...')?>', 'text-muted xray-group-action-status');
 
         $('.xray-test-result').each(function() {
@@ -236,24 +282,36 @@ events.push(function() {
         $.ajax({
             url:      '/xray/xray_ajax.php',
             type:     'post',
-            data:     { action: 'urltest_group', group_uuid: groupUuid },
+            data:     { action: 'urltest_group_start', group_uuid: groupUuid },
             dataType: 'json',
-            success:  function(data) {
-                if (data && data.results) {
-                    $.each(data.results, function(connUuid, result) {
-                        var $cell = $('.xray-test-result[data-conn-uuid="' + connUuid + '"]');
-                        $cell.html(renderTestResult(result));
-                    });
+            success: function(data) {
+                if (data && data.error) {
+                    urltestGroupFinish(data.error, 'text-danger xray-group-action-status');
+                    return;
                 }
-                showGroupStatus('<?=gettext('Done.')?>', 'text-success xray-group-action-status');
+                if (urltestGroupTimer) {
+                    clearInterval(urltestGroupTimer);
+                }
+                urltestGroupTimer = setInterval(function() {
+                    urltestGroupPoll(groupUuid);
+                }, 2000);
             },
             error: function() {
-                showGroupStatus('<?=gettext('Error during test.')?>', 'text-danger xray-group-action-status');
-                $('.xray-test-result').each(function() {
-                    if ($(this).find('.fa-spinner').length) {
-                        $(this).html('<span class="text-muted">&mdash;</span>');
-                    }
-                });
+                urltestGroupFinish('<?=gettext('Error during test.')?>', 'text-danger xray-group-action-status');
+            }
+        });
+    });
+
+    $('.xray-btn-urltest-stop').on('click', function() {
+        var groupUuid = $(this).data('group-uuid');
+        showGroupStatus('<?=gettext('Stopping...')?>', 'text-muted xray-group-action-status');
+        $.ajax({
+            url:      '/xray/xray_ajax.php',
+            type:     'post',
+            data:     { action: 'urltest_group_stop', group_uuid: groupUuid },
+            dataType: 'json',
+            complete: function() {
+                // finish state will come from the next poll when the script writes done:true
             }
         });
     });
