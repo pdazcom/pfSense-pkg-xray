@@ -8,7 +8,7 @@
  *   1. Writes a config per connection (port 49500+i).
  *   2. Starts all xray-core instances in parallel via daemon.
  *   3. Waits until all ports are ready (or timeout).
- *   4. Runs all curl tests in parallel via proc_open.
+ *   4. Runs all SOCKS5 HTTP tests in parallel via pcntl_fork.
  *   5. Collects results, kills all xray-core instances, writes progress.
  *
  * Progress is written to /tmp/xray-grptest-{group_uuid}.json for GUI polling.
@@ -22,8 +22,8 @@ require_once('globals.inc');
 require_once('config.inc');
 require_once('config.lib.inc');
 require_once('/usr/local/pkg/xray/includes/xray_connections.inc');
+require_once(__DIR__ . '/xray-urltest.inc');
 
-define('XRAY_BIN',              '/usr/local/bin/xray-core');
 define('GRPTEST_PORT_BASE',     49500);
 define('GRPTEST_BATCH_SIZE',    5);
 define('GRPTEST_READY_WAIT_MS', 3000);
@@ -57,13 +57,7 @@ if (empty($connections)) {
     exit(0);
 }
 
-$globalCfg = config_get_path('installedpackages/xray/config/0', []);
-$testUrl   = trim($globalCfg['test_url'] ?? '');
-if ($testUrl === '') {
-    $testUrl = 'https://www.google.com';
-}
-
-$curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+$testUrl = urltest_get_test_url();
 
 $results = [];
 foreach ($connections as $conn) {
@@ -71,7 +65,7 @@ foreach ($connections as $conn) {
 }
 progress_write($progressFile, false, $results);
 
-if (!file_exists(XRAY_BIN)) {
+if (!file_exists(URLTEST_XRAY_BIN)) {
     foreach ($connections as $conn) {
         $results[$conn['uuid']] = ['status' => 'unavailable', 'error' => 'xray-core not found'];
     }
@@ -80,7 +74,7 @@ if (!file_exists(XRAY_BIN)) {
     exit(1);
 }
 
-batch_kill_all(range(0, GRPTEST_BATCH_SIZE - 1));
+cleanup_batch_files(range(0, GRPTEST_BATCH_SIZE - 1));
 
 $batches = array_chunk($connections, GRPTEST_BATCH_SIZE);
 
@@ -96,9 +90,9 @@ foreach ($batches as $batch) {
         $confFile = '/tmp/xray-grptest-' . $i . '.conf.json';
         $pidFile  = '/tmp/xray-grptest-' . $i . '.pid';
 
-        batch_kill_pid($pidFile);
+        urltest_kill_pid($pidFile);
 
-        $configJson = grptest_build_config($conn, $port);
+        $configJson = urltest_build_config($conn, $port);
         if ($configJson === null) {
             $results[$conn['uuid']] = ['status' => 'unavailable', 'error' => 'Failed to build config'];
             progress_write($progressFile, false, $results);
@@ -110,7 +104,7 @@ foreach ($batches as $batch) {
         chmod($confFile, 0600);
 
         exec('/usr/sbin/daemon -p ' . escapeshellarg($pidFile)
-            . ' ' . escapeshellarg(XRAY_BIN)
+            . ' ' . escapeshellarg(URLTEST_XRAY_BIN)
             . ' run -c ' . escapeshellarg($confFile)
             . ' >> /dev/null 2>&1');
 
@@ -122,6 +116,7 @@ foreach ($batches as $batch) {
         ];
     }
 
+    // Wait until all SOCKS5 ports are accepting connections
     $deadline = microtime(true) + GRPTEST_READY_WAIT_MS / 1000.0;
     $pending  = array_filter($slot);
     while (!empty($pending) && microtime(true) < $deadline && !$stopRequested) {
@@ -139,7 +134,7 @@ foreach ($batches as $batch) {
 
     if ($stopRequested) {
         foreach (array_filter($slot) as $s) {
-            batch_kill_pid($s['pidFile']);
+            urltest_kill_pid($s['pidFile']);
             @unlink($s['confFile']);
         }
         break;
@@ -148,89 +143,62 @@ foreach ($batches as $batch) {
     foreach ($pending as $i => $s) {
         $results[$s['conn']['uuid']] = ['status' => 'unavailable', 'error' => 'xray-core did not start'];
         progress_write($progressFile, false, $results);
-        batch_kill_pid($s['pidFile']);
+        urltest_kill_pid($s['pidFile']);
         @unlink($s['confFile']);
         $slot[$i] = null;
     }
 
     $activeSlots = array_filter($slot);
 
-    $procs = [];
+    // Run all HTTP tests in parallel via pcntl_fork + shared temp files
+    $forkResults = [];
     foreach ($activeSlots as $i => $s) {
-        $cmd = $curlBin . ' -s -o /dev/null'
-            . ' --socks5 127.0.0.1:' . $s['port']
-            . ' --max-time 10'
-            . ' -w "%{time_starttransfer}\n%{http_code}"'
-            . ' ' . escapeshellarg($testUrl)
-            . ' 2>/dev/null';
-
-        $pipes = [];
-        $proc  = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-        if ($proc !== false) {
-            stream_set_blocking($pipes[1], false);
-            $procs[$i] = ['proc' => $proc, 'pipe' => $pipes[1], 'output' => '', 'slot' => $s];
-        } else {
-            $results[$s['conn']['uuid']] = ['status' => 'unavailable', 'error' => 'Failed to start curl'];
+        $resultFile = '/tmp/xray-grptest-result-' . $i . '.json';
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $results[$s['conn']['uuid']] = ['status' => 'unavailable', 'error' => 'fork failed'];
             progress_write($progressFile, false, $results);
+            continue;
         }
+        if ($pid === 0) {
+            // Child: run test, write result, exit
+            $test = urltest_socks5_http('127.0.0.1', $s['port'], $testUrl, 10);
+            if ($test['error'] === null && $test['status'] >= 200 && $test['status'] < 400) {
+                $r = ['status' => 'ok', 'ping_ms' => $test['latency_ms']];
+            } else {
+                $r = ['status' => 'unavailable', 'error' => $test['error'] ?? "HTTP {$test['status']}"];
+            }
+            file_put_contents($resultFile, json_encode($r), LOCK_EX);
+            exit(0);
+        }
+        $forkResults[$i] = ['pid' => $pid, 'slot' => $s, 'resultFile' => $resultFile];
     }
 
-    while (!empty($procs)) {
-        if ($stopRequested) {
-            foreach ($procs as $p) {
-                proc_terminate($p['proc']);
-                fclose($p['pipe']);
-                proc_close($p['proc']);
-            }
-            $procs = [];
-            break;
+    // Collect children
+    foreach ($forkResults as $i => $f) {
+        pcntl_waitpid($f['pid'], $status);
+
+        $raw = @file_get_contents($f['resultFile']);
+        $r   = $raw !== false ? json_decode($raw, true) : null;
+        if ($r === null) {
+            $r = ['status' => 'unavailable', 'error' => 'no result'];
+        }
+        @unlink($f['resultFile']);
+
+        $connUuid            = $f['slot']['conn']['uuid'];
+        $results[$connUuid]  = $r;
+
+        $savedConn = xray_get_connection_by_uuid($connUuid);
+        if ($savedConn !== null) {
+            $savedConn['test_result'] = json_encode($r);
+            xray_save_connection($savedConn);
         }
 
-        foreach ($procs as $i => $p) {
-            $chunk = fread($p['pipe'], 4096);
-            if ($chunk !== false && $chunk !== '') {
-                $procs[$i]['output'] .= $chunk;
-            }
-
-            $status = proc_get_status($p['proc']);
-            if (!$status['running']) {
-                $remaining = stream_get_contents($p['pipe']);
-                if ($remaining !== false) {
-                    $procs[$i]['output'] .= $remaining;
-                }
-                fclose($p['pipe']);
-                $exitCode = proc_close($p['proc']);
-
-                $lines             = explode("\n", trim($procs[$i]['output']));
-                $timeStartTransfer = (float)trim($lines[0] ?? '0');
-                $httpCode          = (int)trim($lines[1] ?? '0');
-
-                if ($exitCode === 0 && $httpCode >= 200 && $httpCode < 400) {
-                    $result = ['status' => 'ok', 'ping_ms' => (int)round($timeStartTransfer * 1000)];
-                } else {
-                    $result = ['status' => 'unavailable', 'error' => "HTTP {$httpCode}"];
-                }
-
-                $connUuid = $p['slot']['conn']['uuid'];
-                $results[$connUuid] = $result;
-
-                $savedConn = xray_get_connection_by_uuid($connUuid);
-                if ($savedConn !== null) {
-                    $savedConn['test_result'] = json_encode($result);
-                    xray_save_connection($savedConn);
-                }
-
-                progress_write($progressFile, false, $results);
-                unset($procs[$i]);
-            }
-        }
-        if (!empty($procs)) {
-            usleep(50000);
-        }
+        progress_write($progressFile, false, $results);
     }
 
     foreach ($activeSlots as $s) {
-        batch_kill_pid($s['pidFile']);
+        urltest_kill_pid($s['pidFile']);
         @unlink($s['confFile']);
     }
 
@@ -252,115 +220,18 @@ exit(0);
 
 function progress_write(string $file, bool $done, array $results): void
 {
-    $data = ['done' => $done, 'results' => $results];
-    file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+    file_put_contents(
+        $file,
+        json_encode(['done' => $done, 'results' => $results], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        LOCK_EX
+    );
 }
 
-function batch_kill_pid(string $pidFile): void
-{
-    if (!file_exists($pidFile)) {
-        return;
-    }
-    $pid = (int)trim(file_get_contents($pidFile));
-    if ($pid > 0) {
-        exec('/bin/kill -TERM ' . $pid . ' 2>/dev/null');
-        $deadline = microtime(true) + 0.5;
-        while (microtime(true) < $deadline) {
-            exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $o, $rc);
-            if ($rc !== 0) {
-                break;
-            }
-            usleep(50000);
-        }
-        exec('/bin/kill -KILL ' . $pid . ' 2>/dev/null');
-    }
-    @unlink($pidFile);
-}
-
-function batch_kill_all(array $indices): void
+function cleanup_batch_files(array $indices): void
 {
     foreach ($indices as $i) {
-        batch_kill_pid('/tmp/xray-grptest-' . $i . '.pid');
+        urltest_kill_pid('/tmp/xray-grptest-' . $i . '.pid');
         @unlink('/tmp/xray-grptest-' . $i . '.conf.json');
+        @unlink('/tmp/xray-grptest-result-' . $i . '.json');
     }
-}
-
-function grptest_build_config(array $conn, int $socksPort): ?string
-{
-    $configMode = $conn['config_mode'] ?? 'wizard';
-
-    if ($configMode === 'custom') {
-        $raw = trim($conn['custom_config'] ?? '');
-        if ($raw === '') {
-            return null;
-        }
-        $decoded = json_decode($raw, true);
-        if ($decoded === null) {
-            return null;
-        }
-        $decoded['inbounds'] = [[
-            'tag'      => 'socks-in',
-            'port'     => $socksPort,
-            'listen'   => '127.0.0.1',
-            'protocol' => 'socks',
-            'settings' => ['auth' => 'noauth', 'udp' => false, 'ip' => '127.0.0.1'],
-        ]];
-        return json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    $flow = ($conn['flow'] ?? 'xtls-rprx-vision');
-    if ($flow === 'none' || $flow === '') {
-        $flow = '';
-    }
-
-    $cfg = [
-        'log'      => ['loglevel' => 'error'],
-        'inbounds' => [[
-            'tag'      => 'socks-in',
-            'port'     => $socksPort,
-            'listen'   => '127.0.0.1',
-            'protocol' => 'socks',
-            'settings' => ['auth' => 'noauth', 'udp' => false, 'ip' => '127.0.0.1'],
-        ]],
-        'outbounds' => [
-            [
-                'tag'      => 'proxy',
-                'protocol' => 'vless',
-                'settings' => [
-                    'vnext' => [[
-                        'address' => $conn['server_address'] ?? '',
-                        'port'    => (int)($conn['server_port'] ?? 443),
-                        'users'   => [[
-                            'id'         => $conn['vless_uuid'] ?? '',
-                            'encryption' => 'none',
-                            'flow'       => $flow,
-                        ]],
-                    ]],
-                ],
-                'streamSettings' => [
-                    'network'         => 'tcp',
-                    'security'        => 'reality',
-                    'realitySettings' => [
-                        'serverName'  => $conn['reality_sni']        ?? '',
-                        'fingerprint' => $conn['reality_fingerprint'] ?? 'chrome',
-                        'show'        => false,
-                        'publicKey'   => $conn['reality_pubkey']      ?? '',
-                        'shortId'     => $conn['reality_shortid']     ?? '',
-                        'spiderX'     => '',
-                    ],
-                ],
-            ],
-            ['tag' => 'direct', 'protocol' => 'freedom'],
-        ],
-        'routing' => [
-            'domainStrategy' => 'IPIfNonMatch',
-            'rules' => [[
-                'type'        => 'field',
-                'ip'          => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
-                'outboundTag' => 'direct',
-            ]],
-        ],
-    ];
-
-    return json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
