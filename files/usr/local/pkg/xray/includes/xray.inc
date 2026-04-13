@@ -310,16 +310,13 @@ function xray_delete_group(string $uuid): string
         }
     }
 
-    if (isset($config['installedpackages']['xrayconnections']['config'])) {
-        $allConns = $config['installedpackages']['xrayconnections']['config'];
-        $remaining = [];
-        foreach ($allConns as $conn) {
-            if (($conn['group_uuid'] ?? '') !== $uuid) {
-                $remaining[] = $conn;
-            }
+    $remaining = [];
+    foreach (xray_get_connections() as $conn) {
+        if (($conn['group_uuid'] ?? '') !== $uuid) {
+            $remaining[] = $conn;
         }
-        $config['installedpackages']['xrayconnections']['config'] = $remaining;
     }
+    xray_save_connections($remaining);
 
     if (!isset($config['installedpackages']['xraygroups']['config'])) {
         return '';

@@ -16,6 +16,7 @@ require_once('globals.inc');
 require_once('config.inc');
 require_once('config.lib.inc');
 require_once('/usr/local/pkg/xray/includes/xray_vless.inc');
+require_once('/usr/local/pkg/xray/includes/xray_connections.inc');
 
 $group_uuid = isset($argv[1]) ? trim($argv[1]) : '';
 $group_uuid = preg_replace('/[^0-9a-fA-F\-]/', '', $group_uuid);
@@ -82,14 +83,10 @@ if (empty($fetchedLinks)) {
     exit(1);
 }
 
-$existingConns = config_get_path('installedpackages/xrayconnections/config', []);
-
-$groupConns = [];
+$groupConns = xray_get_connections_by_group($group_uuid);
 $otherConns = [];
-foreach ($existingConns as $conn) {
-    if (($conn['group_uuid'] ?? '') === $group_uuid) {
-        $groupConns[] = $conn;
-    } else {
+foreach (xray_get_connections() as $conn) {
+    if (($conn['group_uuid'] ?? '') !== $group_uuid) {
         $otherConns[] = $conn;
     }
 }
@@ -179,12 +176,7 @@ foreach ($groupConns as $conn) {
 
 $allConns = array_merge($otherConns, $filteredGroup);
 
-if (!isset($GLOBALS['config']['installedpackages']['xrayconnections'])) {
-    $GLOBALS['config']['installedpackages']['xrayconnections'] = [];
-}
-config_set_path('installedpackages/xrayconnections/config', $allConns);
-write_config('Xray: subscription update for group ' . $group_uuid
-    . " — added:{$added}, updated:{$updated}, removed:{$removed}");
+xray_save_connections($allConns);
 
 echo json_encode(['added' => $added, 'updated' => $updated, 'removed' => $removed]) . "\n";
 
