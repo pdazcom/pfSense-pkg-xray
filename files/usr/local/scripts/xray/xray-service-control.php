@@ -9,6 +9,7 @@ set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear' . PATH_SE
 require_once('globals.inc');
 require_once('config.inc');
 require_once('config.lib.inc');
+require_once('/usr/local/pkg/xray/includes/xray_connections.inc');
 
 // ─── Shared constants ─────────────────────────────────────────────────────────
 define('XRAY_BIN',          '/usr/local/bin/xray-core');
@@ -17,6 +18,10 @@ define('T2S_BIN',           '/usr/local/tun2socks/tun2socks');
 define('T2S_CONF_DIR',      '/usr/local/tun2socks');
 define('XRAY_DAEMON_LOG',   '/var/log/xray-core.log');
 define('XRAY_VERSION_FILE', '/usr/local/etc/xray-core/version.txt');
+if (!defined('XRAY_DEFAULT_GROUP_UUID')) {
+    define('XRAY_DEFAULT_GROUP_UUID', '00000000-0000-4000-8000-000000000001');
+}
+define('XRAY_ROTATION_SCRIPT', '/usr/local/scripts/xray/xray-rotation.php');
 
 // ─── Per-instance path functions ─────────────────────────────────────────────
 function xray_conf_path(string $inst_uuid): string
@@ -51,7 +56,35 @@ function xray_stopped_flag(string $inst_uuid): string
 
 // ─── Read config from pfSense $config array ──────────────────────────────────
 
-function xray_parse_instance_array(array $inst, bool $globalEnabled): array
+function xray_resolve_connection_for_instance(array $inst): ?array
+{
+    $mode = $inst['connection_mode'] ?? 'fixed';
+
+    if ($mode === 'fixed') {
+        $connUuid = $inst['connection_uuid'] ?? '';
+        if ($connUuid === '') {
+            return null;
+        }
+        return xray_get_connection_by_uuid($connUuid);
+    }
+
+    $activeUuid = $inst['active_connection_uuid'] ?? '';
+    if ($activeUuid !== '') {
+        $conn = xray_get_connection_by_uuid($activeUuid);
+        if ($conn !== null) {
+            return $conn;
+        }
+    }
+
+    $groupUuid = $inst['connection_group_uuid'] ?? '';
+    if ($groupUuid === '') {
+        return null;
+    }
+    $groupConns = xray_get_connections_by_group($groupUuid);
+    return $groupConns[0] ?? null;
+}
+
+function xray_parse_instance_array(array $inst, array $conn, bool $globalEnabled): array
 {
     $rawLevel = $inst['loglevel'] ?? 'warning';
     $levelMap = [
@@ -60,26 +93,53 @@ function xray_parse_instance_array(array $inst, bool $globalEnabled): array
     ];
     $loglevel = $levelMap[$rawLevel] ?? ($rawLevel ?: 'warning');
 
+    $security = $conn['security'] ?? 'reality';
+
     return [
-        'enabled'         => $globalEnabled,
-        'name'            => $inst['name']                ?? 'default',
-        'server'          => $inst['server_address']       ?? '',
-        'port'            => (int)($inst['server_port']    ?? 443),
-        'vless_uuid'      => $inst['vless_uuid']           ?? '',
-        'flow'            => $inst['flow']                 ?? 'xtls-rprx-vision',
-        'sni'             => $inst['reality_sni']          ?? '',
-        'pubkey'          => $inst['reality_pubkey']       ?? '',
-        'shortid'         => $inst['reality_shortid']      ?? '',
-        'fingerprint'     => $inst['reality_fingerprint']  ?? 'chrome',
-        'socks5_listen'   => ($inst['socks5_listen'] ?? '127.0.0.1') ?: '127.0.0.1',
-        'socks5_port'     => (int)($inst['socks5_port'] ?? 10808) ?: 10808,
-        'tun_iface'       => $inst['tun_interface']        ?? 'proxytun0',
-        'mtu'             => (int)($inst['mtu'] ?? 1500),
-        'loglevel'        => $loglevel,
-        'bypass_networks' => ($inst['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
-                            ?: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
-        'config_mode'     => ($inst['config_mode'] ?? 'wizard') ?: 'wizard',
-        'custom_config'   => $inst['custom_config'] ?? '',
+        'enabled'                => $globalEnabled,
+        'name'                   => $inst['name']                ?? 'default',
+        'server'                 => $conn['server_address']      ?? '',
+        'port'                   => (int)($conn['server_port']   ?? 443),
+        'vless_uuid'             => $conn['vless_uuid']          ?? '',
+        'encryption'             => $conn['encryption']          ?? 'none',
+        'flow'                   => $conn['flow']                ?? 'xtls-rprx-vision',
+        // transport
+        'network'                => $conn['network']             ?? 'raw',
+        'transport_path'         => $conn['transport_path']      ?? '',
+        'transport_host'         => $conn['transport_host']      ?? '',
+        'transport_headers'      => $conn['transport_headers']   ?? '',
+        'xhttp_mode'             => $conn['xhttp_mode']          ?? 'stream-one',
+        'grpc_service_name'      => $conn['grpc_service_name']   ?? '',
+        // security
+        'security'               => $security,
+        'tls_sni'                => $conn['tls_sni']             ?? '',
+        'tls_fingerprint'        => $conn['tls_fingerprint']     ?? 'chrome',
+        'tls_alpn'               => $conn['tls_alpn']            ?? '',
+        'sni'                    => $security === 'tls'
+                                     ? ($conn['tls_sni']        ?? '')
+                                     : ($conn['reality_sni']    ?? ''),
+        'pubkey'                 => $conn['reality_pubkey']      ?? '',
+        'shortid'                => $conn['reality_shortid']     ?? '',
+        'fingerprint'            => $security === 'tls'
+                                     ? ($conn['tls_fingerprint'] ?? 'chrome')
+                                     : ($conn['reality_fingerprint'] ?? 'chrome'),
+        'reality_spiderx'        => $conn['reality_spiderx']     ?? '/',
+        // mux
+        'mux'                    => $conn['mux']                 ?? '',
+        // config
+        'config_mode'            => ($conn['config_mode'] ?? 'wizard') ?: 'wizard',
+        'custom_config'          => $conn['custom_config'] ?? '',
+        'socks5_listen'          => ($inst['socks5_listen'] ?? '127.0.0.1') ?: '127.0.0.1',
+        'socks5_port'            => (int)($inst['socks5_port'] ?? 10808) ?: 10808,
+        'tun_iface'              => $inst['tun_interface']       ?? 'proxytun0',
+        'mtu'                    => (int)($inst['mtu'] ?? 1500),
+        'loglevel'               => $loglevel,
+        'bypass_networks'        => ($inst['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
+                                    ?: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
+        'connection_mode'        => $inst['connection_mode'] ?? 'fixed',
+        'connection_group_uuid'  => $inst['connection_group_uuid'] ?? '',
+        'webhook_url'            => $inst['webhook_url'] ?? '',
+        'connection_uuid'        => $conn['uuid'] ?? '',
     ];
 }
 
@@ -95,7 +155,11 @@ function xray_get_all_instances(): array
         if ($inst_uuid === '') {
             continue;
         }
-        $c = xray_parse_instance_array($inst, $globalEnabled);
+        $conn = xray_resolve_connection_for_instance($inst);
+        if ($conn === null) {
+            continue;
+        }
+        $c = xray_parse_instance_array($inst, $conn, $globalEnabled);
         $c['inst_uuid'] = $inst_uuid;
         $result[$inst_uuid] = $c;
     }
@@ -117,7 +181,53 @@ function xray_get_config(string $inst_uuid = ''): array
 // ─── Build xray config array ─────────────────────────────────────────────────
 function xray_build_config_array(array $c): array
 {
-    $flow = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : $c['flow'];
+    $network  = $c['network']  ?? 'raw';
+    $security = $c['security'] ?? 'reality';
+    $flow     = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : ($c['flow'] ?? '');
+
+    if ($network !== 'raw') {
+        $flow = '';
+    }
+
+    $streamParams = [
+        'sni'         => $c['sni']      ?? '',
+        'fp'          => $c['fingerprint'] ?? 'chrome',
+        'pbk'         => $c['pubkey']   ?? '',
+        'sid'         => $c['shortid']  ?? '',
+        'spx'         => $c['reality_spiderx'] ?? '/',
+        'alpn'        => $c['tls_alpn'] ?? '',
+        'path'        => $c['transport_path']    ?? '',
+        'host'        => $c['transport_host']    ?? '',
+        'mode'        => $c['xhttp_mode']        ?? 'stream-one',
+        'serviceName' => $c['grpc_service_name'] ?? '',
+    ];
+
+    require_once('/usr/local/pkg/xray/includes/xray_vless.inc');
+    $streamSettings = xray_build_stream_settings($network, $security, $streamParams);
+
+    $outbound = [
+        'tag'      => 'proxy',
+        'protocol' => 'vless',
+        'settings' => [
+            'vnext' => [[
+                'address' => $c['server'],
+                'port'    => $c['port'],
+                'users'   => [[
+                    'id'         => $c['vless_uuid'],
+                    'encryption' => $c['encryption'] ?? 'none',
+                    'flow'       => $flow,
+                ]],
+            ]],
+        ],
+        'streamSettings' => $streamSettings,
+    ];
+
+    $mux = $c['mux'] ?? '';
+    if ($mux === 'enabled') {
+        $outbound['mux'] = ['enabled' => true,  'concurrency' => 8];
+    } elseif ($mux === 'disabled') {
+        $outbound['mux'] = ['enabled' => false, 'concurrency' => -1];
+    }
 
     $bypassRaw  = $c['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
     $bypassNets = array_values(array_filter(array_map('trim', explode(',', $bypassRaw))));
@@ -135,33 +245,7 @@ function xray_build_config_array(array $c): array
             'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen']],
         ]],
         'outbounds' => [
-            [
-                'tag'      => 'proxy',
-                'protocol' => 'vless',
-                'settings' => [
-                    'vnext' => [[
-                        'address' => $c['server'],
-                        'port'    => $c['port'],
-                        'users'   => [[
-                            'id'         => $c['vless_uuid'],
-                            'encryption' => 'none',
-                            'flow'       => $flow,
-                        ]],
-                    ]],
-                ],
-                'streamSettings' => [
-                    'network'         => 'tcp',
-                    'security'        => 'reality',
-                    'realitySettings' => [
-                        'serverName'  => $c['sni'],
-                        'fingerprint' => $c['fingerprint'],
-                        'show'        => false,
-                        'publicKey'   => $c['pubkey'],
-                        'shortId'     => $c['shortid'],
-                        'spiderX'     => '',
-                    ],
-                ],
-            ],
+            $outbound,
             ['tag' => 'direct', 'protocol' => 'freedom'],
         ],
         'routing' => [
@@ -463,6 +547,50 @@ function do_start(array $c): bool
     }
 
     $inst_uuid = $c['inst_uuid'];
+
+    if (($c['connection_mode'] ?? 'fixed') === 'rotation') {
+        if (file_exists(XRAY_ROTATION_SCRIPT)) {
+            $rotOut = [];
+            exec('/usr/local/bin/php ' . escapeshellarg(XRAY_ROTATION_SCRIPT) . ' ' . escapeshellarg($inst_uuid) . ' 2>&1', $rotOut, $rotRc);
+            $rotJson = trim(implode('', $rotOut));
+            $rotData = json_decode($rotJson, true);
+            if ($rotData === null || ($rotData['status'] ?? '') !== 'ok') {
+                echo "ERROR: Rotation found no working connection for instance {$inst_uuid}.\n";
+                return false;
+            }
+            $winnerUuid = $rotData['connection_uuid'] ?? '';
+            if ($winnerUuid !== '') {
+                $instancesCfg = config_get_path('installedpackages/xrayinstances/config', []);
+                foreach ($instancesCfg as $idx => $inst) {
+                    if (($inst['uuid'] ?? '') === $inst_uuid) {
+                        config_set_path(
+                            'installedpackages/xrayinstances/config/' . $idx . '/active_connection_uuid',
+                            $winnerUuid
+                        );
+                        break;
+                    }
+                }
+                write_config('Xray: rotation selected connection ' . $winnerUuid . ' for instance ' . $inst_uuid);
+            }
+            $newConn = xray_get_connection_by_uuid($winnerUuid);
+            if ($newConn !== null) {
+                $globalCfg     = config_get_path('installedpackages/xray/config/0', []);
+                $globalEnabled = isset($globalCfg['enabled']) && $globalCfg['enabled'] === 'on';
+                $instRaw = null;
+                $instancesCfg2 = config_get_path('installedpackages/xrayinstances/config', []);
+                foreach ($instancesCfg2 as $inst) {
+                    if (($inst['uuid'] ?? '') === $inst_uuid) {
+                        $instRaw = $inst;
+                        break;
+                    }
+                }
+                if ($instRaw !== null) {
+                    $c = xray_parse_instance_array($instRaw, $newConn, $globalEnabled);
+                    $c['inst_uuid'] = $inst_uuid;
+                }
+            }
+        }
+    }
 
     $lock = lock_acquire($inst_uuid);
     if ($lock === false) {

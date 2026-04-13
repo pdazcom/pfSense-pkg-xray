@@ -15,8 +15,9 @@ require_once('globals.inc');
 require_once('config.inc');
 require_once('config.lib.inc');
 
-define('XRAY_CTRL',    '/usr/local/scripts/xray/xray-service-control.php');
-define('WATCHDOG_LOG', '/var/log/xray-watchdog.log');
+define('XRAY_CTRL',       '/usr/local/scripts/xray/xray-service-control.php');
+define('XRAY_ROTATION',   '/usr/local/scripts/xray/xray-rotation.php');
+define('WATCHDOG_LOG',    '/var/log/xray-watchdog.log');
 
 function wlog(string $msg): void
 {
@@ -98,6 +99,14 @@ foreach ($instancesCfg as $inst) {
 
     if ($rc === 0) {
         wlog("WATCHDOG [{$name}]: restart OK — " . ($output ?: 'no output'));
+
+        $connectionMode = $inst['connection_mode'] ?? 'fixed';
+        if ($connectionMode === 'rotation' && file_exists(XRAY_ROTATION)) {
+            $rotOut = [];
+            exec('/usr/local/bin/php ' . escapeshellarg(XRAY_ROTATION) . ' ' . escapeshellarg($inst_uuid) . ' 2>&1', $rotOut, $rotRc);
+            $rotOutput = trim(implode(' ', $rotOut));
+            wlog("WATCHDOG [{$name}]: rotation result: {$rotOutput}");
+        }
     } else {
         wlog("WATCHDOG [{$name}]: restart FAILED (exit {$rc}) — {$output}");
         $anyFailed = true;

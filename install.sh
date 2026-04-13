@@ -136,6 +136,7 @@ cmd_deploy_files() {
 
     # Scripts
     cp "${REPO_ROOT}/files/usr/local/scripts/xray/"*.php /usr/local/scripts/xray/
+    cp "${REPO_ROOT}/files/usr/local/scripts/xray/"*.inc /usr/local/scripts/xray/
     chmod +x /usr/local/scripts/xray/*.php
 
     # rc script

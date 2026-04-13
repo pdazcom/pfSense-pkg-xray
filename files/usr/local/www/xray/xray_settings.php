@@ -23,9 +23,19 @@ $pconfig = xray_get_global_config();
 $save_success = false;
 
 if ($_POST && isset($_POST['act']) && $_POST['act'] === 'save') {
+	$testUrl = trim($_POST['test_url'] ?? '');
+	if ($testUrl === '' || !filter_var($testUrl, FILTER_VALIDATE_URL)) {
+		$testUrl = 'https://www.google.com';
+	}
+	$notifHook = trim($_POST['notification_webhook'] ?? '');
+	if ($notifHook !== '' && !filter_var($notifHook, FILTER_VALIDATE_URL)) {
+		$notifHook = '';
+	}
 	$pconfig = [
-		'enabled'          => !empty($_POST['enabled'])          ? 'on' : '',
-		'watchdog_enabled' => !empty($_POST['watchdog_enabled']) ? 'on' : '',
+		'enabled'               => !empty($_POST['enabled'])          ? 'on' : '',
+		'watchdog_enabled'      => !empty($_POST['watchdog_enabled']) ? 'on' : '',
+		'test_url'              => $testUrl,
+		'notification_webhook'  => $notifHook,
 	];
 	xray_save_global_config($pconfig);
 	xray_resync();
@@ -35,10 +45,7 @@ if ($_POST && isset($_POST['act']) && $_POST['act'] === 'save') {
 $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Settings')];
 $pglinks  = ['', '/xray/xray_instances.php', '@self'];
 
-$tab_array   = [];
-$tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
-$tab_array[] = [gettext('Settings'),    true,  '/xray/xray_settings.php'];
-$tab_array[] = [gettext('Diagnostics'), false, '/xray/xray_diagnostics.php'];
+$tab_array = xray_build_tab_array('settings');
 
 include('head.inc');
 
@@ -65,6 +72,22 @@ $section->addInput(new Form_Checkbox(
 	gettext('Enable crash watchdog'),
 	($pconfig['watchdog_enabled'] ?? '') === 'on'
 ))->setHelp(gettext('Automatically restart crashed xray-core or tun2socks processes (runs every minute via cron).'));
+
+$section->addInput(new Form_Input(
+	'test_url',
+	gettext('URL Test Target'),
+	'text',
+	$pconfig['test_url'] ?? 'https://www.google.com',
+	['placeholder' => 'https://www.google.com']
+))->setHelp(gettext('URL used when testing connections. Must return HTTP 2xx-3xx for a connection to be considered working.'));
+
+$section->addInput(new Form_Input(
+	'notification_webhook',
+	gettext('Notification Webhook'),
+	'text',
+	$pconfig['notification_webhook'] ?? '',
+	['placeholder' => 'https://hooks.example.com/...']
+))->setHelp(gettext('Optional. HTTP POST called when rotation finds no working connection. Leave empty to disable.'));
 
 $form->add($section);
 
