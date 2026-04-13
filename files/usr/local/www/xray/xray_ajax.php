@@ -10,6 +10,7 @@
 $nocsrf = true;
 require_once('guiconfig.inc');
 require_once('xray/includes/xray.inc');
+require_once('xray/includes/xray_vless.inc');
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -197,297 +198,222 @@ switch ($action) {
         echo ($data !== null) ? $json : json_encode(['version' => 'unknown']);
         break;
 
+    case 'urltest':
+        $connUuid = trim($_POST['connection_uuid'] ?? $_GET['connection_uuid'] ?? '');
+        $connUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $connUuid);
+        if (strlen($connUuid) < 36) {
+            echo json_encode(['status' => 'unavailable', 'error' => 'Invalid connection UUID']);
+            break;
+        }
+        $out = [];
+        exec('/usr/local/bin/php /usr/local/scripts/xray/xray-urltest.php ' . escapeshellarg($connUuid) . ' 2>/dev/null', $out, $rc);
+        $json = implode('', $out);
+        $data = json_decode($json, true);
+        echo ($data !== null) ? $json : json_encode(['status' => 'unavailable', 'error' => 'No output']);
+        break;
+
+    case 'urltest_group':
+        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
+        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
+        if (strlen($groupUuid) < 36) {
+            echo json_encode(['error' => 'Invalid group UUID']);
+            break;
+        }
+        $connections = xray_get_connections_by_group($groupUuid);
+        $results = [];
+        foreach ($connections as $conn) {
+            $connUuid = $conn['uuid'] ?? '';
+            if ($connUuid === '') continue;
+            $out = [];
+            exec('/usr/local/bin/php /usr/local/scripts/xray/xray-urltest.php ' . escapeshellarg($connUuid) . ' 2>/dev/null', $out);
+            $json = implode('', $out);
+            $data = json_decode($json, true);
+            $results[$connUuid] = $data ?? ['status' => 'unavailable'];
+        }
+        echo json_encode(['results' => $results]);
+        break;
+
+    case 'update_subscription':
+        $groupUuid = trim($_POST['group_uuid'] ?? $_GET['group_uuid'] ?? '');
+        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
+        if (strlen($groupUuid) < 36) {
+            echo json_encode(['error' => 'Invalid group UUID']);
+            break;
+        }
+        echo json_encode(xray_ajax_update_subscription($groupUuid));
+        break;
+
+    case 'delete_connection':
+        if ($uuid === '') {
+            echo json_encode(['error' => 'Missing UUID']);
+            break;
+        }
+        $err = xray_delete_connection($uuid);
+        if ($err !== '') {
+            echo json_encode(['error' => $err]);
+        } else {
+            echo json_encode(['result' => 'ok']);
+        }
+        break;
+
+    case 'delete_group':
+        $groupUuid = $uuid !== '' ? $uuid : trim($_POST['group_uuid'] ?? '');
+        $groupUuid = preg_replace('/[^0-9a-fA-F\-]/', '', $groupUuid);
+        if (strlen($groupUuid) < 36) {
+            echo json_encode(['error' => 'Invalid group UUID']);
+            break;
+        }
+        $err = xray_delete_group($groupUuid);
+        if ($err !== '') {
+            echo json_encode(['error' => $err]);
+        } else {
+            echo json_encode(['result' => 'ok']);
+        }
+        break;
+
     default:
         http_response_code(400);
         echo json_encode(['error' => 'Unknown action: ' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8')]);
 }
 
-// ─── VLESS parser ────────────────────────────────────────────────────────────
-
-function xray_parse_vless_link(string $link, string $socksListen = '127.0.0.1', int $socksPort = 10808): array
+function xray_ajax_update_subscription(string $groupUuid): array
 {
-    $link = trim($link, " \t\n\r\0\x0B\"'");
-
-    if (strpos($link, 'vless://') !== 0) {
-        return ['error' => 'Link must start with vless://'];
+    $group = xray_get_group_by_uuid($groupUuid);
+    if ($group === null) {
+        return ['error' => 'Group not found'];
+    }
+    if (($group['type'] ?? 'manual') !== 'subscription') {
+        return ['error' => 'Group is not a subscription group'];
     }
 
-    $rest = substr($link, 8);
-
-    $name = '';
-    if (($hashPos = strrpos($rest, '#')) !== false) {
-        $name = htmlspecialchars(urldecode(substr($rest, $hashPos + 1)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $rest = substr($rest, 0, $hashPos);
+    $subUrl = trim($group['sub_url'] ?? '');
+    if ($subUrl === '') {
+        return ['error' => 'Subscription URL is empty'];
     }
 
-    $query = '';
-    if (($qPos = strpos($rest, '?')) !== false) {
-        $query = substr($rest, $qPos + 1);
-        $rest  = substr($rest, 0, $qPos);
+    $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+    $rawOut  = [];
+    exec(
+        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
+        . ' ' . escapeshellarg($subUrl)
+        . ' 2>/dev/null',
+        $rawOut,
+        $curlRc
+    );
+
+    if ($curlRc !== 0 || empty($rawOut)) {
+        return ['error' => 'Failed to fetch subscription URL (curl exit ' . $curlRc . ')'];
     }
 
-    $atPos = strrpos($rest, '@');
-    if ($atPos === false) {
-        return ['error' => 'Missing @ separator between UUID and host'];
+    $raw     = implode("\n", $rawOut);
+    $decoded = base64_decode(trim($raw), true);
+    if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
+        $raw = $decoded;
     }
 
-    $uuid     = substr($rest, 0, $atPos);
-    $hostport = substr($rest, $atPos + 1);
+    $lines = array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw)));
+    $fetchedLinks = array_values(array_filter($lines, static function (string $line): bool {
+        return strpos($line, 'vless://') === 0;
+    }));
 
-    if (substr($hostport, 0, 1) === '[') {
-        $closeBracket = strpos($hostport, ']');
-        if ($closeBracket === false) {
-            return ['error' => 'Invalid IPv6 address format'];
+    if (empty($fetchedLinks)) {
+        return ['error' => 'No vless:// links found in subscription'];
+    }
+
+    $existingConns = xray_get_connections();
+
+    $groupConns = [];
+    $otherConns = [];
+    foreach ($existingConns as $conn) {
+        if (($conn['group_uuid'] ?? '') === $groupUuid) {
+            $groupConns[] = $conn;
+        } else {
+            $otherConns[] = $conn;
         }
-        $host    = substr($hostport, 1, $closeBracket - 1);
-        $portStr = ltrim(substr($hostport, $closeBracket + 1), ':');
-    } else {
-        $lastColon = strrpos($hostport, ':');
-        if ($lastColon === false) {
-            return ['error' => 'Missing port in host:port'];
+    }
+
+    $added   = 0;
+    $updated = 0;
+    $removed = 0;
+
+    $parsedConns = [];
+    foreach ($fetchedLinks as $link) {
+        $data = xray_parse_vless_link($link);
+        if (isset($data['error'])) {
+            continue;
         }
-        $host    = substr($hostport, 0, $lastColon);
-        $portStr = substr($hostport, $lastColon + 1);
-    }
-
-    $port = (int)$portStr;
-    if ($port <= 0 || $port > 65535) {
-        return ['error' => 'Invalid port: ' . $portStr];
-    }
-
-    if (empty($uuid)) {
-        return ['error' => 'UUID is empty'];
-    }
-    if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\z/', $uuid)) {
-        return ['error' => 'Invalid UUID format (expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)'];
-    }
-    if (empty($host)) {
-        return ['error' => 'Host is empty'];
-    }
-
-    parse_str($query, $params);
-
-    $type     = $params['type']     ?? 'tcp';
-    $security = $params['security'] ?? 'reality';
-    $isWizard = ($type === 'tcp' || $type === '') && $security === 'reality';
-
-    $customConfig = '';
-    if (!$isWizard) {
-        $customConfig = xray_build_custom_config($uuid, $host, $port, $params, $socksListen, $socksPort);
-    }
-
-    $flow = $params['flow'] ?? '';
-    if (empty($flow)) {
-        $flow = 'xtls-rprx-vision';
-    }
-
-    $fp = $params['fp'] ?? '';
-    if (empty($fp)) {
-        $fp = 'chrome';
-    }
-
-    $allowedFlow = ['xtls-rprx-vision', 'none', ''];
-    $allowedFp   = ['chrome', 'firefox', 'safari', 'edge', 'random'];
-    $flow = in_array($flow, $allowedFlow, true) ? $flow : 'xtls-rprx-vision';
-    $fp   = in_array($fp,   $allowedFp,   true) ? $fp   : 'chrome';
-
-    $sanitize = static function (string $v): string {
-        return htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    };
-
-    $result = [
-        'vless_uuid'  => $sanitize($uuid),
-        'host'        => $sanitize($host),
-        'port'        => $port,
-        'flow'        => $flow,
-        'sni'         => $sanitize($params['sni'] ?? ''),
-        'pbk'         => $sanitize($params['pbk'] ?? ''),
-        'sid'         => $sanitize($params['sid'] ?? ''),
-        'fp'          => $fp,
-        'type'        => $sanitize($type),
-        'security'    => $sanitize($security),
-        'name'        => $name,
-        'config_mode' => $isWizard ? 'wizard' : 'custom',
-    ];
-
-    if (!$isWizard) {
-        $result['custom_config'] = $customConfig;
-    }
-
-    return $result;
-}
-
-function xray_build_custom_config(
-    string $uuid,
-    string $host,
-    int $port,
-    array $params,
-    string $socksListen = '127.0.0.1',
-    int $socksPort = 10808
-): string {
-    $type       = $params['type']       ?? 'tcp';
-    $security   = $params['security']   ?? 'none';
-    $encryption = $params['encryption'] ?? 'none';
-    $flow       = $params['flow']       ?? '';
-
-    if ($type !== 'tcp') {
-        $flow = '';
-    }
-
-    $config = [
-        'log' => ['loglevel' => 'warning'],
-        'inbounds' => [[
-            'tag'      => 'socks-in',
-            'port'     => $socksPort,
-            'listen'   => $socksListen,
-            'protocol' => 'socks',
-            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $socksListen],
-        ]],
-        'outbounds' => [
-            [
-                'tag'      => 'proxy',
-                'protocol' => 'vless',
-                'settings' => [
-                    'vnext' => [[
-                        'address' => $host,
-                        'port'    => $port,
-                        'users'   => [[
-                            'id'         => $uuid,
-                            'encryption' => $encryption,
-                            'flow'       => $flow,
-                        ]],
-                    ]],
-                ],
-                'streamSettings' => xray_build_stream_settings($type, $security, $params),
-            ],
-            ['tag' => 'direct', 'protocol' => 'freedom'],
-        ],
-        'routing' => [
-            'domainStrategy' => 'IPIfNonMatch',
-            'rules' => [[
-                'type'        => 'field',
-                'ip'          => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
-                'outboundTag' => 'direct',
-            ]],
-        ],
-    ];
-
-    return json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-}
-
-function xray_build_stream_settings(string $type, string $security, array $params): array
-{
-    $ss = [
-        'network'  => $type,
-        'security' => $security,
-    ];
-
-    if ($security === 'reality') {
-        $ss['realitySettings'] = [
-            'serverName'  => $params['sni'] ?? '',
-            'fingerprint' => $params['fp']  ?? 'chrome',
-            'show'        => false,
-            'publicKey'   => $params['pbk'] ?? '',
-            'shortId'     => $params['sid'] ?? '',
-            'spiderX'     => $params['spx'] ?? '',
+        $parsedConns[] = [
+            'server_address'      => $data['host'],
+            'server_port'         => (string)$data['port'],
+            'vless_uuid'          => $data['vless_uuid'],
+            'flow'                => $data['flow'],
+            'reality_sni'         => $data['sni'],
+            'reality_pubkey'      => $data['pbk'],
+            'reality_shortid'     => $data['sid'],
+            'reality_fingerprint' => $data['fp'],
+            'config_mode'         => $data['config_mode'],
+            'custom_config'       => $data['custom_config'] ?? '',
+            'name'                => $data['name'] !== '' ? $data['name']
+                                     : ($data['host'] . ':' . $data['port']),
         ];
-    } elseif ($security === 'tls') {
-        $tls = [
-            'serverName'  => $params['sni'] ?? '',
-            'fingerprint' => $params['fp']  ?? 'chrome',
-        ];
-        if (!empty($params['alpn'])) {
-            $tls['alpn'] = explode(',', $params['alpn']);
+    }
+
+    $usedUuids = [];
+    foreach ($parsedConns as $parsed) {
+        $matched  = null;
+        $matchIdx = null;
+        foreach ($groupConns as $idx => $existing) {
+            if (
+                ($existing['server_address'] ?? '') === $parsed['server_address']
+                && ($existing['server_port'] ?? '') === $parsed['server_port']
+                && ($existing['vless_uuid'] ?? '') === $parsed['vless_uuid']
+            ) {
+                $matched  = $existing;
+                $matchIdx = $idx;
+                break;
+            }
         }
-        $ss['tlsSettings'] = $tls;
+
+        if ($matched !== null) {
+            $needsUpdate = false;
+            foreach (['flow', 'reality_sni', 'reality_pubkey', 'reality_shortid', 'reality_fingerprint', 'config_mode', 'custom_config'] as $field) {
+                if (($matched[$field] ?? '') !== ($parsed[$field] ?? '')) {
+                    $needsUpdate = true;
+                    break;
+                }
+            }
+            if ($needsUpdate) {
+                foreach ($parsed as $k => $v) {
+                    $groupConns[$matchIdx][$k] = $v;
+                }
+                $updated++;
+            }
+            $usedUuids[] = $matched['uuid'];
+        } else {
+            $newConn = array_merge($parsed, [
+                'uuid'        => xray_generate_uuid(),
+                'group_uuid'  => $groupUuid,
+                'test_result' => '',
+            ]);
+            $groupConns[] = $newConn;
+            $usedUuids[]  = $newConn['uuid'];
+            $added++;
+        }
     }
 
-    switch ($type) {
-        case 'xhttp':
-            $xhttp = [];
-            if (!empty($params['path'])) {
-                $xhttp['path'] = $params['path'];
-            }
-            if (!empty($params['host'])) {
-                $xhttp['host'] = $params['host'];
-            }
-            if (!empty($params['mode'])) {
-                $xhttp['mode'] = $params['mode'];
-            }
-            if (!empty($xhttp)) {
-                $ss['xhttpSettings'] = $xhttp;
-            }
-            break;
-
-        case 'ws':
-            $ws = [];
-            if (!empty($params['path'])) {
-                $ws['path'] = $params['path'];
-            }
-            if (!empty($params['host'])) {
-                $ws['headers'] = ['Host' => $params['host']];
-            }
-            if (!empty($ws)) {
-                $ss['wsSettings'] = $ws;
-            }
-            break;
-
-        case 'grpc':
-            $grpc = [];
-            if (!empty($params['serviceName'])) {
-                $grpc['serviceName'] = $params['serviceName'];
-            }
-            if (!empty($params['mode'])) {
-                $grpc['multiMode'] = ($params['mode'] === 'multi');
-            }
-            if (!empty($grpc)) {
-                $ss['grpcSettings'] = $grpc;
-            }
-            break;
-
-        case 'h2':
-        case 'http':
-            $h2 = [];
-            if (!empty($params['path'])) {
-                $h2['path'] = $params['path'];
-            }
-            if (!empty($params['host'])) {
-                $h2['host'] = [$params['host']];
-            }
-            if (!empty($h2)) {
-                $ss['httpSettings'] = $h2;
-            }
-            break;
-
-        case 'kcp':
-            $kcp = [];
-            if (!empty($params['headerType'])) {
-                $kcp['header'] = ['type' => $params['headerType']];
-            }
-            if (!empty($params['seed'])) {
-                $kcp['seed'] = $params['seed'];
-            }
-            if (!empty($kcp)) {
-                $ss['kcpSettings'] = $kcp;
-            }
-            break;
-
-        case 'tcp':
-            if (!empty($params['headerType']) && $params['headerType'] === 'http') {
-                $tcp = ['header' => ['type' => 'http']];
-                if (!empty($params['path'])) {
-                    $tcp['header']['request'] = ['path' => explode(',', $params['path'])];
-                }
-                if (!empty($params['host'])) {
-                    if (!isset($tcp['header']['request'])) {
-                        $tcp['header']['request'] = [];
-                    }
-                    $tcp['header']['request']['headers'] = ['Host' => explode(',', $params['host'])];
-                }
-                $ss['tcpSettings'] = $tcp;
-            }
-            break;
+    $filteredGroup = [];
+    foreach ($groupConns as $conn) {
+        if (in_array($conn['uuid'] ?? '', $usedUuids, true)) {
+            $filteredGroup[] = $conn;
+        } else {
+            $removed++;
+        }
     }
 
-    return $ss;
+    $allConns = array_merge($otherConns, $filteredGroup);
+
+    xray_save_connections($allConns);
+
+    return ['added' => $added, 'updated' => $updated, 'removed' => $removed];
 }
+

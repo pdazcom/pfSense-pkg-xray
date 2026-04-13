@@ -72,6 +72,7 @@ $pgtitle = [gettext('VPN'), gettext('Xray'), gettext('Diagnostics')];
 $pglinks  = ['', '/xray/xray_instances.php', '/xray/xray_instances.php', '@self'];
 
 $tab_array   = [];
+$tab_array[] = [gettext('Connections'), false, '/xray/xray_connections.php'];
 $tab_array[] = [gettext('Instances'),   false, '/xray/xray_instances.php'];
 $tab_array[] = [gettext('Settings'),    false, '/xray/xray_settings.php'];
 $tab_array[] = [gettext('Diagnostics'), true,  '/xray/xray_diagnostics.php'];
