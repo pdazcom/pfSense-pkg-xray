@@ -246,6 +246,7 @@ function xray_deinstall(): void
 
     $patterns = [
         '/var/run/xray_core_*.pid',
+        '/var/run/tunnel_*.pid',
         '/var/run/tun2socks_*.pid',
         '/var/run/xray_start_*.lock',
         '/var/run/xray_stopped_*.flag',

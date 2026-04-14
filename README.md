@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/github/license/MrTheory/pfsense-xray)](LICENSE)
 [![pfSense](https://img.shields.io/badge/pfSense-CE%202.7.x%20%2F%202.8.x-blue)](https://www.pfsense.org)
-[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64-red)](https://freebsd.org)
+[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64%20%2F%20aarch64-red)](https://freebsd.org)
 [![PHP](https://img.shields.io/badge/PHP-8.2-purple)](https://php.net)
 
 **Xray-core VPN package for pfSense CE** — native GUI integration for VLESS+Reality tunnels with selective routing via pfSense Aliases and Firewall Rules.
@@ -18,12 +18,14 @@ Ported from [os-xray](https://github.com/MrTheory/os-xray) (OPNsense plugin). Al
 ```
 xray-core  (VLESS+Reality outbound)
     ↓  SOCKS5  (127.0.0.1:10808, configurable)
-tun2socks
+hev-socks5-tunnel  (amd64)  /  tun2socks  (aarch64 fallback)
     ↓  TUN interface  (e.g. proxytun0)
 pfSense Gateway  →  Firewall Rules  →  Selective routing
 ```
 
 Traffic you want to tunnel is sent to the Xray gateway via pfSense policy-based routing — no changes to xray-core routing config are needed. Aliases and firewall rules work natively.
+
+On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) is used as the TUN bridge (~311 KB C binary). On **aarch64** (no hev release available), [tun2socks](https://github.com/xjasonlyu/tun2socks) is used as a fallback. The backend can be forced with `--backend` regardless of architecture.
 
 ---
 
@@ -57,10 +59,11 @@ Traffic you want to tunnel is sent to the Xray gateway via pfSense policy-based 
 | pfSense CE | 2.7.x / 2.8.x               |
 | FreeBSD    | 14.x amd64 / aarch64        |
 | PHP        | 8.2                         |
-| xray-core  | 24.x or later (recommended) |
-| tun2socks  | 2.x                         |
+| xray-core          | 24.x or later (recommended)     |
+| hev-socks5-tunnel  | 2.x (amd64)                     |
+| tun2socks          | 2.x (aarch64 fallback)          |
 
-> **Architecture note:** `install.sh` auto-detects `amd64` and `aarch64`. Other architectures are not supported by the upstream binaries.
+> **Architecture note:** `install.sh` auto-detects `amd64` and `aarch64`. On amd64, `hev-socks5-tunnel` is used by default; on aarch64, `tun2socks` is used. Use `--backend` to override.
 
 ---
 
@@ -84,8 +87,8 @@ sh install.sh
 
 The script will:
 
-- Download `xray-core` and `tun2socks` from GitHub Releases via `fetch`
-- Install binaries to `/usr/local/bin/xray-core` and `/usr/local/tun2socks/tun2socks`
+- Download `xray-core` and `hev-socks5-tunnel` (amd64) or `tun2socks` (aarch64) from GitHub Releases via `fetch`
+- Install binaries to `/usr/local/bin/xray-core` and `/usr/local/tun2socks/`
 - Copy all package files to the correct pfSense filesystem locations
 - Load the `if_tun` kernel module
 - Configure log rotation (`/etc/newsyslog.conf.d/xray.conf`)
@@ -113,7 +116,11 @@ sh install.sh update --no-binaries
 sh install.sh download-binaries
 
 # Pin specific versions
-sh install.sh --xray-version 25.4.30 --t2s-version 2.5.2
+sh install.sh --xray-version 25.4.30 --hev-version 2.14.4 --t2s-version 2.5.2
+
+# Force a specific tunnel backend (overrides arch detection)
+sh install.sh download-binaries --backend tun2socks
+sh install.sh download-binaries --backend hev
 
 # Full uninstall (stops services, removes files, cleans pfSense config)
 sh install.sh uninstall
@@ -278,12 +285,13 @@ All runtime files are named by instance UUID to avoid conflicts between instance
 | --------------------------------------------- | ----------------------------------------------------- |
 | `/usr/local/etc/xray-core/config-{uuid}.json` | xray-core config                                      |
 | `/usr/local/etc/xray-core/connections.json`   | Connections store (all groups)                        |
-| `/usr/local/tun2socks/config-{uuid}.yaml`     | tun2socks config                                      |
+| `/usr/local/tun2socks/config-{uuid}.yaml`     | tunnel bridge config (hev or tun2socks format)        |
+| `/usr/local/tun2socks/backend.txt`            | active backend: `hev` or `tun2socks`                  |
 | `/var/run/xray_core_{uuid}.pid`               | xray-core PID                                         |
-| `/var/run/tun2socks_{uuid}.pid`               | tun2socks PID                                         |
+| `/var/run/tunnel_{uuid}.pid`                  | tunnel bridge PID (hev-socks5-tunnel or tun2socks)    |
 | `/var/run/xray_start_{uuid}.lock`             | Per-instance startup lock (flock)                     |
 | `/var/run/xray_stopped_{uuid}.flag`           | Manual stop marker (watchdog skips)                   |
-| `/var/log/xray-core.log`                      | xray-core + tun2socks stderr output                   |
+| `/var/log/xray-core.log`                      | xray-core + tunnel bridge stderr output               |
 | `/var/log/xray-watchdog.log`                  | Watchdog restart events + subscription autoupdate log |
 
 ---
@@ -310,8 +318,11 @@ php /usr/local/scripts/xray/xray-service-control.php start <uuid>
 kldstat | grep if_tun
 kldload if_tun
 
-# Check tun2socks is running
-ps aux | grep tun2socks
+# Check which tunnel backend is active
+cat /usr/local/tun2socks/backend.txt
+
+# Check tunnel process is running
+ps aux | grep -E 'hev-socks5|tun2socks'
 
 # Check interface
 ifconfig proxytun0
@@ -319,7 +330,7 @@ ifconfig proxytun0
 
 **Gateway is marked down**
 
-Make sure **Monitor IP** is set to the local TUN peer address (e.g. `10.100.66.45`), not an external IP. tun2socks does not forward ICMP, so pinging external IPs through the gateway will always fail.
+Make sure **Monitor IP** is set to the gateway peer address (e.g. `10.100.66.45`), not an external IP. The tunnel bridge does not forward ICMP, so pinging external IPs through the gateway will always fail.
 
 **Traffic not routing through tunnel**
 
@@ -344,7 +355,8 @@ tail -100 /var/log/xray-core.log
 ## Credits
 
 - [Xray-core](https://github.com/XTLS/Xray-core) — the proxy engine
-- [tun2socks](https://github.com/xjasonlyu/tun2socks) — SOCKS5 to TUN bridge
+- [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) — lightweight SOCKS5 to TUN bridge (amd64)
+- [tun2socks](https://github.com/xjasonlyu/tun2socks) — SOCKS5 to TUN bridge (aarch64 fallback)
 - [os-xray](https://github.com/MrTheory/os-xray) — OPNsense plugin this is ported from
 
 ---
