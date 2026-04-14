@@ -577,8 +577,8 @@ function xray_install(): void
     chmod('/usr/local/scripts/xray', 0755);
 
     $newsyslog = <<<'EOT'
-/var/log/xray-core.log      root:wheel  644  3  600  *  JG
-/var/log/xray-watchdog.log  root:wheel  644  3  200  *  JG
+/var/log/xray-core.log      root:wheel  644  5  600  *  B
+/var/log/xray-watchdog.log  root:wheel  644  5  200  *  B
 EOT;
     @mkdir('/etc/newsyslog.conf.d', 0755, true);
     file_put_contents('/etc/newsyslog.conf.d/xray.conf', $newsyslog . "\n");

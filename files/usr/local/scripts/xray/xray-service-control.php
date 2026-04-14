@@ -365,9 +365,9 @@ function proc_kill(string $pidfile): void
 
 function proc_start(string $bin, string $args, string $pidfile): void
 {
-    $log = escapeshellarg(XRAY_DAEMON_LOG);
-    exec('/usr/sbin/daemon -p ' . escapeshellarg($pidfile)
-       . ' ' . escapeshellarg($bin) . ' ' . $args . ' >> ' . $log . ' 2>&1 &');
+    exec('/usr/sbin/daemon -f -p ' . escapeshellarg($pidfile)
+       . ' -o ' . escapeshellarg(XRAY_DAEMON_LOG)
+       . ' ' . escapeshellarg($bin) . ' ' . $args);
 }
 
 // ─── Per-instance lock helpers ────────────────────────────────────────────────
