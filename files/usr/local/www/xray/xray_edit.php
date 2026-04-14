@@ -85,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
 
         xray_save_instance($instance);
         xray_register_tun_interface($instance['tun_interface'], $newUuid);
+        write_config('Xray: save instance and register TUN ' . $newUuid);
         xray_resync();
 
         header('Location: /xray/xray_instances.php');

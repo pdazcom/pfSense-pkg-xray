@@ -72,8 +72,6 @@ function xray_save_instance(array $instance): void
     if (!$found) {
         $instances[] = $instance;
     }
-
-    write_config('Xray: save instance ' . $uuid);
 }
 
 function xray_delete_instance(string $uuid): void
@@ -138,21 +136,18 @@ function xray_register_tun_interface(string $ifname, string $uuid): void
 {
     global $config;
 
-    $key = xray_find_interface_key($ifname);
-    $ip  = xray_tun_ip_for_uuid($uuid);
-    $descr = 'Xray-' . substr($uuid, 0, 8);
+    $key   = xray_find_interface_key($ifname);
+    $descr = 'Xray_' . substr($uuid, 0, 8);
 
     $config['interfaces'][$key] = [
         'if'      => $ifname,
         'descr'   => $descr,
         'enable'  => '',
-        'ipaddr'  => $ip,
-        'subnet'  => '30',
+        'ipaddr'  => 'none',
+        'subnet'  => '',
         'spoofmac'=> '',
         'type'    => 'none',
     ];
-
-    write_config('Xray: register TUN interface ' . $ifname);
 }
 
 function xray_unregister_tun_interface(string $ifname): void
@@ -207,8 +202,8 @@ function xray_install(): void
     chmod('/usr/local/scripts/xray', 0755);
 
     $newsyslog = <<<'EOT'
-/var/log/xray-core.log      root:wheel  644  3  600  *  JG
-/var/log/xray-watchdog.log  root:wheel  644  3  200  *  JG
+/var/log/xray-core.log      root:wheel  644  5  600  *  B
+/var/log/xray-watchdog.log  root:wheel  644  5  200  *  B
 EOT;
     @mkdir('/etc/newsyslog.conf.d', 0755, true);
     file_put_contents('/etc/newsyslog.conf.d/xray.conf', $newsyslog . "\n");
