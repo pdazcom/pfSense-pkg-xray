@@ -7,7 +7,7 @@
  * Runs every minute via cron. For each instance:
  *   1. Checks watchdog_enabled global flag.
  *   2. Skips instances with xray_stopped_<uuid>.flag (manual stop).
- *   3. If xray-core OR tun2socks died — triggers restart.
+ *   3. If xray-core OR tunnel process died — triggers restart.
  */
 
 set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear' . PATH_SEPARATOR . get_include_path());
@@ -75,7 +75,7 @@ foreach ($instancesCfg as $inst) {
     }
 
     $xrayPid = "/var/run/xray_core_{$inst_uuid}.pid";
-    $t2sPid  = "/var/run/tun2socks_{$inst_uuid}.pid";
+    $t2sPid  = "/var/run/tunnel_{$inst_uuid}.pid";
 
     $xrayAlive = proc_alive($xrayPid);
     $t2sAlive  = proc_alive($t2sPid);
@@ -89,7 +89,7 @@ foreach ($instancesCfg as $inst) {
         $died[] = 'xray-core';
     }
     if (!$t2sAlive) {
-        $died[] = 'tun2socks';
+        $died[] = 'tunnel';
     }
 
     wlog("WATCHDOG [{$name}]: " . implode(', ', $died) . " not running — triggering restart");

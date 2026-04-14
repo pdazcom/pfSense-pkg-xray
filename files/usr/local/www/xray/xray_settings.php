@@ -71,7 +71,7 @@ $section->addInput(new Form_Checkbox(
 	gettext('Watchdog'),
 	gettext('Enable crash watchdog'),
 	($pconfig['watchdog_enabled'] ?? '') === 'on'
-))->setHelp(gettext('Automatically restart crashed xray-core or tun2socks processes (runs every minute via cron).'));
+))->setHelp(gettext('Automatically restart crashed xray-core or tunnel processes (runs every minute via cron).'));
 
 $section->addInput(new Form_Input(
 	'test_url',
