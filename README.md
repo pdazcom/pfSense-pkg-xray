@@ -7,6 +7,8 @@
 
 **Xray-core VPN package for pfSense CE** — native GUI integration for VLESS+Reality tunnels with selective routing via pfSense Aliases and Firewall Rules.
 
+[![image](images/pfSense-pkg-xray.jpg)](screenshot)
+
 Ported from [os-xray](https://github.com/MrTheory/os-xray) (OPNsense plugin). All core logic (config generation, VLESS parser, process management, watchdog) is preserved; only the framework layer is rewritten for pfSense.
 
 ---
@@ -51,7 +53,7 @@ Traffic you want to tunnel is sent to the Xray gateway via pfSense policy-based 
 ## Requirements
 
 | Component  | Version                     |
-|------------|-----------------------------|
+| ---------- | --------------------------- |
 | pfSense CE | 2.7.x / 2.8.x               |
 | FreeBSD    | 14.x amd64 / aarch64        |
 | PHP        | 8.2                         |
@@ -81,6 +83,7 @@ sh install.sh
 ```
 
 The script will:
+
 - Download `xray-core` and `tun2socks` from GitHub Releases via `fetch`
 - Install binaries to `/usr/local/bin/xray-core` and `/usr/local/tun2socks/tun2socks`
 - Copy all package files to the correct pfSense filesystem locations
@@ -162,6 +165,7 @@ After starting an instance, configure pfSense to route selected traffic through 
 ### 1. Create a Gateway
 
 **System → Routing → Gateways → Add**:
+
 - Interface: select the Xray TUN interface (appears as OPTx)
 - Gateway IP: second address of the /30 subnet shown in **Diagnostics → TUN IP**
   (e.g. if TUN IP is `10.100.66.46/30`, gateway is `10.100.66.45`)
@@ -172,6 +176,7 @@ After starting an instance, configure pfSense to route selected traffic through 
 ### 2. Create an Alias
 
 **Firewall → Aliases → Add**:
+
 - Type: Network(s), Host(s), or URL Table
 - Add the IPs, subnets, or domains you want to route through Xray
 - Example URL Table: `https://antifilter.download/list/allyouneed.lst`
@@ -179,6 +184,7 @@ After starting an instance, configure pfSense to route selected traffic through 
 ### 3. Create a Firewall Rule
 
 **Firewall → Rules → LAN → Add** (place above the default allow rule):
+
 - Action: Pass
 - Protocol: TCP/UDP
 - Source: LAN net (or specific hosts)
@@ -218,6 +224,7 @@ sh install.sh uninstall
 ```
 
 Then manually remove in pfSense UI:
+
 - **System → Routing → Gateways** — delete `XRAY_GW`
 - **Firewall → Rules** — delete rules that used `XRAY_GW`
 
@@ -267,17 +274,17 @@ pfSense-pkg-xray/
 
 All runtime files are named by instance UUID to avoid conflicts between instances:
 
-| File | Purpose |
-|------|---------|
-| `/usr/local/etc/xray-core/config-{uuid}.json` | xray-core config |
-| `/usr/local/etc/xray-core/connections.json` | Connections store (all groups) |
-| `/usr/local/tun2socks/config-{uuid}.yaml` | tun2socks config |
-| `/var/run/xray_core_{uuid}.pid` | xray-core PID |
-| `/var/run/tun2socks_{uuid}.pid` | tun2socks PID |
-| `/var/run/xray_start_{uuid}.lock` | Per-instance startup lock (flock) |
-| `/var/run/xray_stopped_{uuid}.flag` | Manual stop marker (watchdog skips) |
-| `/var/log/xray-core.log` | xray-core + tun2socks stderr output |
-| `/var/log/xray-watchdog.log` | Watchdog restart events + subscription autoupdate log |
+| File                                          | Purpose                                               |
+| --------------------------------------------- | ----------------------------------------------------- |
+| `/usr/local/etc/xray-core/config-{uuid}.json` | xray-core config                                      |
+| `/usr/local/etc/xray-core/connections.json`   | Connections store (all groups)                        |
+| `/usr/local/tun2socks/config-{uuid}.yaml`     | tun2socks config                                      |
+| `/var/run/xray_core_{uuid}.pid`               | xray-core PID                                         |
+| `/var/run/tun2socks_{uuid}.pid`               | tun2socks PID                                         |
+| `/var/run/xray_start_{uuid}.lock`             | Per-instance startup lock (flock)                     |
+| `/var/run/xray_stopped_{uuid}.flag`           | Manual stop marker (watchdog skips)                   |
+| `/var/log/xray-core.log`                      | xray-core + tun2socks stderr output                   |
+| `/var/log/xray-watchdog.log`                  | Watchdog restart events + subscription autoupdate log |
 
 ---
 
@@ -351,6 +358,7 @@ by Pavel, licensed under the BSD 2-Clause License. The original copyright notice
 is retained in the [LICENSE](LICENSE) file as required by the license terms.
 
 Core logic ported from os-xray:
+
 - `xray-service-control.php` — config generation, process management, VLESS+Reality config builder
 - `xray-watchdog.php` — crash recovery daemon
 - `xray-ifstats.php` — TUN interface statistics
