@@ -64,6 +64,11 @@ function t2s_pid_path(string $inst_uuid): string
     return "/var/run/tunnel_{$inst_uuid}.pid";
 }
 
+function t2s_legacy_pid_path(string $inst_uuid): string
+{
+    return "/var/run/tun2socks_{$inst_uuid}.pid";
+}
+
 function xray_lock_path(string $inst_uuid): string
 {
     return "/var/run/xray_start_{$inst_uuid}.lock";
@@ -618,6 +623,7 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
     }
 
     proc_kill(t2s_pid_path($inst_uuid));
+    proc_kill(t2s_legacy_pid_path($inst_uuid));
     proc_kill(xray_pid_path($inst_uuid));
     tun_destroy($tunIface);
 
@@ -711,7 +717,9 @@ function do_start(array $c): bool
             proc_start(XRAY_BIN, 'run -c ' . escapeshellarg(xray_conf_path($inst_uuid)), xray_pid_path($inst_uuid));
             usleep(800000);
         }
-        if (!proc_is_running(t2s_pid_path($inst_uuid))) {
+        $tunnelAlive = proc_is_running(t2s_pid_path($inst_uuid))
+            || proc_is_running(t2s_legacy_pid_path($inst_uuid));
+        if (!$tunnelAlive) {
             $tunnelArgs = tunnel_backend() === 'hev'
                 ? escapeshellarg(t2s_conf_path($inst_uuid))
                 : '-config ' . escapeshellarg(t2s_conf_path($inst_uuid));
@@ -732,7 +740,8 @@ function do_status(string $inst_uuid = ''): void
 {
     if ($inst_uuid !== '') {
         $xray = proc_is_running(xray_pid_path($inst_uuid));
-        $t2s  = proc_is_running(t2s_pid_path($inst_uuid));
+        $t2s  = proc_is_running(t2s_pid_path($inst_uuid))
+             || proc_is_running(t2s_legacy_pid_path($inst_uuid));
         echo json_encode([
             'status'    => ($xray && $t2s) ? 'ok' : 'stopped',
             'xray_core' => $xray ? 'running' : 'stopped',
@@ -750,7 +759,8 @@ function do_status(string $inst_uuid = ''): void
     $first = reset($all);
     $uuid0 = $first['inst_uuid'];
     $xray  = proc_is_running(xray_pid_path($uuid0));
-    $t2s   = proc_is_running(t2s_pid_path($uuid0));
+    $t2s   = proc_is_running(t2s_pid_path($uuid0))
+          || proc_is_running(t2s_legacy_pid_path($uuid0));
     echo json_encode([
         'status'    => ($xray && $t2s) ? 'ok' : 'stopped',
         'xray_core' => $xray ? 'running' : 'stopped',
@@ -764,7 +774,8 @@ function do_status_all(): void
     $result = [];
     foreach ($all as $inst_uuid => $c) {
         $xray = proc_is_running(xray_pid_path($inst_uuid));
-        $t2s  = proc_is_running(t2s_pid_path($inst_uuid));
+        $t2s  = proc_is_running(t2s_pid_path($inst_uuid))
+             || proc_is_running(t2s_legacy_pid_path($inst_uuid));
         $result[$inst_uuid] = [
             'name'      => $c['name'],
             'status'    => ($xray && $t2s) ? 'ok' : 'stopped',
