@@ -11,11 +11,13 @@
 #   install              Full install (default)
 #   update               Re-deploy files + restart services
 #   uninstall            Stop services, remove files, clean config
-#   download-binaries    Download xray-core + tun2socks only
+#   download-binaries    Download xray-core + tunnel binaries only
 #
 # Options:
 #   --xray-version VER   xray-core version (default: 25.4.30)
-#   --t2s-version VER    tun2socks version (default: 2.5.2)
+#   --hev-version VER    hev-socks5-tunnel version (default: 2.14.4, x86_64 only)
+#   --t2s-version VER    tun2socks version (default: 2.5.2, aarch64 fallback)
+#   --backend BACKEND    Force tunnel backend: 'hev' or 'tun2socks' (overrides arch detection)
 #   --no-binaries        Skip binary download (use existing)
 
 set -e
@@ -24,8 +26,10 @@ set -u
 # ─── Defaults ─────────────────────────────────────────────────────────────────
 COMMAND="install"
 XRAY_VERSION="25.4.30"
+HEV_VERSION="2.14.4"
 T2S_VERSION="2.5.2"
 SKIP_BINARIES=0
+FORCE_BACKEND=""
 
 # ─── Parse arguments ──────────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
@@ -38,8 +42,20 @@ while [ $# -gt 0 ]; do
             XRAY_VERSION="$2"
             shift 2
             ;;
+        --hev-version)
+            HEV_VERSION="$2"
+            shift 2
+            ;;
         --t2s-version)
             T2S_VERSION="$2"
+            shift 2
+            ;;
+        --backend)
+            FORCE_BACKEND="$2"
+            case "${FORCE_BACKEND}" in
+                hev|tun2socks) ;;
+                *) die "--backend must be 'hev' or 'tun2socks'" ;;
+            esac
             shift 2
             ;;
         --no-binaries)
@@ -68,8 +84,8 @@ fi
 # ─── Architecture detection ───────────────────────────────────────────────────
 ARCH=$(uname -m)
 case "${ARCH}" in
-    amd64)   XRAY_ARCH="64";        T2S_ARCH="amd64" ;;
-    aarch64) XRAY_ARCH="arm64-v8a"; T2S_ARCH="arm64" ;;
+    amd64)   XRAY_ARCH="64";        T2S_ARCH="amd64"; HEV_ARCH="x86_64" ;;
+    aarch64) XRAY_ARCH="arm64-v8a"; T2S_ARCH="arm64"; HEV_ARCH="" ;;
     *)       die "Unsupported architecture: ${ARCH}" ;;
 esac
 
@@ -100,25 +116,45 @@ cmd_download_binaries() {
     echo "${XRAY_VERSION}" > /usr/local/etc/xray-core/version.txt
     ok "xray-core $(/usr/local/bin/xray-core version 2>/dev/null | head -1)"
 
-    # tun2socks
-    T2S_URL="https://github.com/xjasonlyu/tun2socks/releases/download/v${T2S_VERSION}/tun2socks-freebsd-${T2S_ARCH}.zip"
-    info "Downloading tun2socks ${T2S_VERSION}..."
-    fetch -q -o "${TMPDIR}/tun2socks.zip" "${T2S_URL}" || die "Failed to download tun2socks"
+    # hev-socks5-tunnel (x86_64) or tun2socks fallback (aarch64)
+    # --backend flag overrides auto-detection
+    if [ "${FORCE_BACKEND}" = "tun2socks" ]; then
+        HEV_ARCH=""
+    elif [ "${FORCE_BACKEND}" = "hev" ] && [ -z "${HEV_ARCH}" ]; then
+        die "hev-socks5-tunnel has no binary for ${ARCH}"
+    fi
 
-    mkdir -p "${TMPDIR}/tun2socks"
-    unzip -q "${TMPDIR}/tun2socks.zip" -d "${TMPDIR}/tun2socks/" || die "Failed to unzip tun2socks"
+    if [ -n "${HEV_ARCH}" ]; then
+        HEV_URL="https://github.com/heiher/hev-socks5-tunnel/releases/download/${HEV_VERSION}/hev-socks5-tunnel-freebsd-${HEV_ARCH}"
+        info "Downloading hev-socks5-tunnel ${HEV_VERSION} (${HEV_ARCH})..."
+        fetch -q -o "${TMPDIR}/hev-socks5-tunnel" "${HEV_URL}" || die "Failed to download hev-socks5-tunnel"
+        install -m 755 "${TMPDIR}/hev-socks5-tunnel" /usr/local/tun2socks/hev-socks5-tunnel
+        rm -f /usr/local/tun2socks/tun2socks
+        echo "hev" > /usr/local/tun2socks/backend.txt
+        ok "hev-socks5-tunnel $(/usr/local/tun2socks/hev-socks5-tunnel --version 2>/dev/null | head -1)"
+    else
+        info "hev-socks5-tunnel has no ${ARCH} binary — using tun2socks fallback"
+        T2S_URL="https://github.com/xjasonlyu/tun2socks/releases/download/v${T2S_VERSION}/tun2socks-freebsd-${T2S_ARCH}.zip"
+        info "Downloading tun2socks ${T2S_VERSION}..."
+        fetch -q -o "${TMPDIR}/tun2socks.zip" "${T2S_URL}" || die "Failed to download tun2socks"
 
-    T2S_BIN=""
-    for candidate in "${TMPDIR}/tun2socks/tun2socks" "${TMPDIR}/tun2socks/tun2socks-freebsd-${T2S_ARCH}"; do
-        if [ -f "${candidate}" ]; then
-            T2S_BIN="${candidate}"
-            break
-        fi
-    done
-    [ -z "${T2S_BIN}" ] && die "tun2socks binary not found in archive"
+        mkdir -p "${TMPDIR}/tun2socks"
+        unzip -q "${TMPDIR}/tun2socks.zip" -d "${TMPDIR}/tun2socks/" || die "Failed to unzip tun2socks"
 
-    install -m 755 "${T2S_BIN}" /usr/local/tun2socks/tun2socks
-    ok "tun2socks $(/usr/local/tun2socks/tun2socks --version 2>/dev/null | head -1)"
+        T2S_BIN=""
+        for candidate in "${TMPDIR}/tun2socks/tun2socks" "${TMPDIR}/tun2socks/tun2socks-freebsd-${T2S_ARCH}"; do
+            if [ -f "${candidate}" ]; then
+                T2S_BIN="${candidate}"
+                break
+            fi
+        done
+        [ -z "${T2S_BIN}" ] && die "tun2socks binary not found in archive"
+
+        install -m 755 "${T2S_BIN}" /usr/local/tun2socks/tun2socks
+        rm -f /usr/local/tun2socks/hev-socks5-tunnel
+        echo "tun2socks" > /usr/local/tun2socks/backend.txt
+        ok "tun2socks $(/usr/local/tun2socks/tun2socks --version 2>/dev/null | head -1)"
+    fi
 }
 
 # ─── Deploy package files from repo ──────────────────────────────────────────

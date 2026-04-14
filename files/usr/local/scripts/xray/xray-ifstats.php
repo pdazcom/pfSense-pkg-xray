@@ -45,7 +45,7 @@ if ($inst === null) {
 
 $tunIface  = $inst['tun_interface'] ?? 'proxytun0';
 $xrayPid   = "/var/run/xray_core_{$inst_uuid}.pid";
-$t2sPid    = "/var/run/tun2socks_{$inst_uuid}.pid";
+$t2sPid    = "/var/run/tunnel_{$inst_uuid}.pid";
 
 $serverAddr = '';
 $connUuid   = $inst['connection_uuid'] ?? ($inst['active_connection_uuid'] ?? '');
@@ -139,7 +139,7 @@ $pktsOut   = 0;
 $mtu       = 0;
 
 if ($ifRc === 0) {
-    if (preg_match('/inet\s+(\S+)\s+netmask\s+(\S+)/', $ifconfig, $m)) {
+    if (preg_match('/inet\s+(\S+)(?:\s+-->\s+\S+)?\s+netmask\s+(\S+)/', $ifconfig, $m)) {
         $tunIp  = $m[1];
         $hexMask = $m[2];
         if (str_starts_with($hexMask, '0x')) {

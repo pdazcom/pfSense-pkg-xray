@@ -14,7 +14,7 @@ require_once('/usr/local/pkg/xray/includes/xray_connections.inc');
 // ─── Shared constants ─────────────────────────────────────────────────────────
 define('XRAY_BIN',          '/usr/local/bin/xray-core');
 define('XRAY_CONF_DIR',     '/usr/local/etc/xray-core');
-define('T2S_BIN',           '/usr/local/tun2socks/tun2socks');
+define('T2S_DIR',           '/usr/local/tun2socks');
 define('T2S_CONF_DIR',      '/usr/local/tun2socks');
 define('XRAY_DAEMON_LOG',   '/var/log/xray-core.log');
 define('XRAY_VERSION_FILE', '/usr/local/etc/xray-core/version.txt');
@@ -22,6 +22,26 @@ if (!defined('XRAY_DEFAULT_GROUP_UUID')) {
     define('XRAY_DEFAULT_GROUP_UUID', '00000000-0000-4000-8000-000000000001');
 }
 define('XRAY_ROTATION_SCRIPT', '/usr/local/scripts/xray/xray-rotation.php');
+
+function tunnel_backend(): string
+{
+    $backendFile = T2S_DIR . '/backend.txt';
+    if (file_exists($backendFile)) {
+        $backend = trim((string)file_get_contents($backendFile));
+        if ($backend === 'hev' || $backend === 'tun2socks') {
+            return $backend;
+        }
+    }
+    return file_exists(T2S_DIR . '/hev-socks5-tunnel') ? 'hev' : 'tun2socks';
+}
+
+function tunnel_bin(): string
+{
+    return tunnel_backend() === 'hev'
+        ? T2S_DIR . '/hev-socks5-tunnel'
+        : T2S_DIR . '/tun2socks';
+}
+
 
 // ─── Per-instance path functions ─────────────────────────────────────────────
 function xray_conf_path(string $inst_uuid): string
@@ -41,7 +61,7 @@ function t2s_conf_path(string $inst_uuid): string
 
 function t2s_pid_path(string $inst_uuid): string
 {
-    return "/var/run/tun2socks_{$inst_uuid}.pid";
+    return "/var/run/tunnel_{$inst_uuid}.pid";
 }
 
 function xray_lock_path(string $inst_uuid): string
@@ -305,16 +325,48 @@ function xray_write_config(array $c): void
     chmod($confFile, 0640);
 }
 
+function xray_tun_ip_for_uuid(string $uuid): string
+{
+    $crc    = crc32($uuid) & 0xFFFF;
+    $octet  = ($crc % 62) + 1;
+    $block  = ($crc >> 6) % 254 + 1;
+    return "10.100.{$block}.{$octet}";
+}
+
+function xray_tun_gw_for_uuid(string $uuid): string
+{
+    $crc    = crc32($uuid) & 0xFFFF;
+    $octet  = ($crc % 62) + 1;
+    $block  = ($crc >> 6) % 254 + 1;
+    return "10.100.{$block}." . ($octet - 1);
+}
+
 function t2s_write_config(array $c): void
 {
     if (!is_dir(T2S_CONF_DIR)) {
         mkdir(T2S_CONF_DIR, 0750, true);
     }
     $inst_uuid = $c['inst_uuid'];
-    $yaml = "proxy: socks5://{$c['socks5_listen']}:{$c['socks5_port']}\n"
-          . "device: {$c['tun_iface']}\n"
-          . "mtu: {$c['mtu']}\n"
-          . "loglevel: info\n";
+    if (tunnel_backend() === 'hev') {
+        $yaml = "tunnel:\n"
+              . "  name: {$c['tun_iface']}\n"
+              . "  mtu: {$c['mtu']}\n"
+              . "\n"
+              . "socks5:\n"
+              . "  address: {$c['socks5_listen']}\n"
+              . "  port: {$c['socks5_port']}\n"
+              . "  udp: udp\n"
+              . "\n"
+              . "misc:\n"
+              . "  log-file: stderr\n"
+              . "  log-level: warn\n"
+              . "  pid-file: " . t2s_pid_path($inst_uuid) . "\n";
+    } else {
+        $yaml = "proxy: socks5://{$c['socks5_listen']}:{$c['socks5_port']}\n"
+              . "device: {$c['tun_iface']}\n"
+              . "mtu: {$c['mtu']}\n"
+              . "loglevel: info\n";
+    }
     file_put_contents(t2s_conf_path($inst_uuid), $yaml);
     chmod(t2s_conf_path($inst_uuid), 0640);
 }
@@ -341,7 +393,7 @@ function proc_kill(string $pidfile): void
     $pid = (int)trim(file_get_contents($pidfile));
     if ($pid > 0) {
         $comm = trim((string)shell_exec('ps -o comm= -p ' . $pid . ' 2>/dev/null'));
-        if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false)) {
+        if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false && strpos($comm, 'hev-socks5') === false)) {
             @unlink($pidfile);
             return;
         }
@@ -428,6 +480,36 @@ function lo0_needs_alias(string $addr): bool
     return count($parts) === 4 && $parts[0] === '127';
 }
 
+function lo0_alias_ensure_any(string $addr): void
+{
+    exec('/sbin/ifconfig lo0 2>/dev/null', $out, $rc);
+    if ($rc !== 0) {
+        return;
+    }
+    if (strpos(implode("\n", $out), $addr) !== false) {
+        return;
+    }
+    exec('/sbin/ifconfig lo0 alias ' . escapeshellarg($addr) . ' netmask 255.255.255.255 2>/dev/null', $out2, $rc2);
+    if ($rc2 === 0) {
+        echo "INFO: Added lo0 alias {$addr}\n";
+    }
+}
+
+function lo0_alias_remove_any(string $addr): void
+{
+    exec('/sbin/ifconfig lo0 2>/dev/null', $out, $rc);
+    if ($rc !== 0) {
+        return;
+    }
+    if (strpos(implode("\n", $out), $addr) === false) {
+        return;
+    }
+    exec('/sbin/ifconfig lo0 -alias ' . escapeshellarg($addr) . ' 2>/dev/null', $out2, $rc2);
+    if ($rc2 === 0) {
+        echo "INFO: Removed lo0 alias {$addr}\n";
+    }
+}
+
 function lo0_alias_ensure(string $addr): void
 {
     if (!lo0_needs_alias($addr)) {
@@ -482,9 +564,20 @@ function xray_configure_tun(array $c): void
 
     exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' mtu ' . $mtu . ' up 2>/dev/null');
 
-    $ip = xray_get_tun_ip_from_pfsense_config($iface);
-    if ($ip !== '') {
-        exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' inet ' . escapeshellarg($ip) . ' 2>/dev/null');
+    $localIp = xray_tun_ip_for_uuid($c['inst_uuid']);
+    $gwIp    = xray_tun_gw_for_uuid($c['inst_uuid']);
+
+    if (tunnel_backend() === 'hev') {
+        exec('/sbin/ifconfig ' . escapeshellarg($iface)
+            . ' inet ' . escapeshellarg($gwIp)
+            . ' ' . escapeshellarg($gwIp)
+            . ' netmask 255.255.255.255 2>/dev/null');
+        lo0_alias_ensure_any($localIp);
+    } else {
+        exec('/sbin/ifconfig ' . escapeshellarg($iface)
+            . ' inet ' . escapeshellarg($localIp)
+            . ' ' . escapeshellarg($gwIp)
+            . ' netmask 255.255.255.255 2>/dev/null');
     }
 
     echo "INFO: TUN interface {$iface} configured\n";
@@ -526,9 +619,13 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
 
     proc_kill(t2s_pid_path($inst_uuid));
     proc_kill(xray_pid_path($inst_uuid));
+    tun_destroy($tunIface);
 
     $c2 = xray_get_config($inst_uuid);
     lo0_alias_remove($c2['socks5_listen'] ?? '127.0.0.1');
+    if (tunnel_backend() === 'hev') {
+        lo0_alias_remove_any(xray_tun_ip_for_uuid($inst_uuid));
+    }
 
     file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
 
@@ -541,8 +638,8 @@ function do_start(array $c): bool
         echo "ERROR: xray-core not found at " . XRAY_BIN . "\n";
         return false;
     }
-    if (!file_exists(T2S_BIN)) {
-        echo "ERROR: tun2socks not found at " . T2S_BIN . "\n";
+    if (!file_exists(tunnel_bin())) {
+        echo "ERROR: tunnel binary not found at " . tunnel_bin() . "\n";
         return false;
     }
 
@@ -615,7 +712,10 @@ function do_start(array $c): bool
             usleep(800000);
         }
         if (!proc_is_running(t2s_pid_path($inst_uuid))) {
-            proc_start(T2S_BIN, '-config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid));
+            $tunnelArgs = tunnel_backend() === 'hev'
+                ? escapeshellarg(t2s_conf_path($inst_uuid))
+                : '-config ' . escapeshellarg(t2s_conf_path($inst_uuid));
+            proc_start(tunnel_bin(), $tunnelArgs, t2s_pid_path($inst_uuid));
             usleep(800000);
         }
 
