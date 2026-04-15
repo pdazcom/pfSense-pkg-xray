@@ -22,8 +22,8 @@ require_once('xray/includes/xray.inc');
 if ($_POST && isset($_POST['act']) && $_POST['act'] === 'delete') {
 	$delUuid = xray_sanitize_uuid($_POST['uuid'] ?? '');
 	if ($delUuid !== '') {
+		mwexec('/usr/local/bin/php /usr/local/scripts/xray/xray-service-control.php stop ' . escapeshellarg($delUuid));
 		xray_delete_instance($delUuid);
-		xray_resync();
 	}
 	header('Location: /xray/xray_instances.php');
 	exit;
@@ -53,10 +53,12 @@ function xray_instance_connection_label(array $inst, array $allConns, array $all
 	$connUuid = $inst['connection_uuid'] ?? '';
 	foreach ($allConns as $conn) {
 		if ($conn['uuid'] === $connUuid) {
-			$name = htmlspecialchars($conn['name'] ?? '', ENT_QUOTES, 'UTF-8');
-			$addr = htmlspecialchars($conn['server_address'] ?? '', ENT_QUOTES, 'UTF-8');
-			$port = (int)($conn['server_port'] ?? 443);
-			return $name . '<br><small class="text-muted"><code>' . $addr . ':' . $port . '</code></small>';
+			$name        = htmlspecialchars($conn['name'] ?? '', ENT_QUOTES, 'UTF-8');
+			$serverLabel = xray_connection_server_label($conn);
+			$serverHtml  = $serverLabel !== ''
+				? '<br><small class="text-muted"><code>' . htmlspecialchars($serverLabel, ENT_QUOTES, 'UTF-8') . '</code></small>'
+				: '';
+			return $name . $serverHtml;
 		}
 	}
 	return '<span class="text-muted">' . gettext('(none)') . '</span>';
@@ -174,6 +176,11 @@ events.push(function() {
 			type: 'post',
 			data: { action: action, uuid: uuid },
 			dataType: 'json',
+			success: function(data) {
+				if (data.result === 'failed' && data.output) {
+					alert(data.output);
+				}
+			},
 			complete: function() {
 				setTimeout(refreshStatus, 1500);
 			}

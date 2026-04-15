@@ -171,7 +171,8 @@ function xray_is_enabled(): bool
 function xray_get_instances(): array
 {
     global $config;
-    return $config['installedpackages']['xrayinstances']['config'] ?? [];
+    $list = $config['installedpackages']['xrayinstances']['config'] ?? [];
+    return is_array($list) ? $list : [];
 }
 
 function xray_get_instance_by_uuid(string $uuid): ?array
@@ -195,7 +196,10 @@ function xray_save_instance(array $instance): void
 {
     global $config;
 
-    if (!isset($config['installedpackages']['xrayinstances']['config'])) {
+    if (!is_array($config['installedpackages']['xrayinstances'] ?? null)) {
+        $config['installedpackages']['xrayinstances'] = [];
+    }
+    if (!is_array($config['installedpackages']['xrayinstances']['config'] ?? null)) {
         $config['installedpackages']['xrayinstances']['config'] = [];
     }
 
@@ -220,7 +224,7 @@ function xray_delete_instance(string $uuid): void
 {
     global $config;
 
-    if (!isset($config['installedpackages']['xrayinstances']['config'])) {
+    if (!is_array($config['installedpackages']['xrayinstances']['config'] ?? null)) {
         return;
     }
 
@@ -243,7 +247,8 @@ function xray_delete_instance(string $uuid): void
 function xray_get_groups(): array
 {
     global $config;
-    return $config['installedpackages']['xraygroups']['config'] ?? [];
+    $list = $config['installedpackages']['xraygroups']['config'] ?? [];
+    return is_array($list) ? $list : [];
 }
 
 function xray_get_group_by_uuid(string $uuid): ?array
@@ -260,7 +265,10 @@ function xray_save_group(array $group): void
 {
     global $config;
 
-    if (!isset($config['installedpackages']['xraygroups']['config'])) {
+    if (!is_array($config['installedpackages']['xraygroups'] ?? null)) {
+        $config['installedpackages']['xraygroups'] = [];
+    }
+    if (!is_array($config['installedpackages']['xraygroups']['config'] ?? null)) {
         $config['installedpackages']['xraygroups']['config'] = [];
     }
 
@@ -549,8 +557,7 @@ function xray_unregister_tun_interface_by_uuid(string $uuid): void
 
 function xray_resync(): void
 {
-    mwexec('/usr/local/bin/php /usr/local/scripts/xray/xray-service-control.php reconfigure');
-    filter_configure();
+    mwexec_bg('/usr/local/bin/php /usr/local/scripts/xray/xray-service-control.php reconfigure');
 }
 
 // ─── Install / Deinstall ─────────────────────────────────────────────────────
@@ -594,8 +601,77 @@ EOT;
         'root'
     );
 
+    xray_register_menu();
     xray_bootstrap_default_group();
     xray_migrate_instances_to_connections();
+}
+
+function xray_register_menu(): void
+{
+    global $config;
+
+    // pfSense XML serializer treats 'package', 'menu', 'service' as listtags —
+    // they must be flat arrays (not ['item' => [...]]).
+    // head.inc only renders menu entries when 'package' is also non-empty.
+    if (!is_array($config['installedpackages'] ?? null)) {
+        $config['installedpackages'] = [];
+    }
+    if (!is_array($config['installedpackages']['package'] ?? null)) {
+        $config['installedpackages']['package'] = [];
+    }
+    $packageExists = false;
+    foreach ($config['installedpackages']['package'] as $pkg) {
+        if (($pkg['name'] ?? '') === 'xray') {
+            $packageExists = true;
+            break;
+        }
+    }
+    if (!$packageExists) {
+        $config['installedpackages']['package'][] = [
+            'name'         => 'xray',
+            'version'      => '1.2.0',
+            'descr'        => 'Xray VPN (xray-core + tunnel)',
+            'include_file' => '/usr/local/pkg/xray/includes/xray.inc',
+        ];
+    }
+
+    if (!is_array($config['installedpackages']['menu'] ?? null)) {
+        $config['installedpackages']['menu'] = [];
+    }
+    $menuExists = false;
+    foreach ($config['installedpackages']['menu'] as $item) {
+        if (($item['name'] ?? '') === 'Xray') {
+            $menuExists = true;
+            break;
+        }
+    }
+    if (!$menuExists) {
+        $config['installedpackages']['menu'][] = [
+            'name'    => 'Xray',
+            'section' => 'VPN',
+            'url'     => '/xray/xray_connections.php',
+            'order'   => '',
+        ];
+    }
+
+    if (!is_array($config['installedpackages']['service'] ?? null)) {
+        $config['installedpackages']['service'] = [];
+    }
+    $serviceExists = false;
+    foreach ($config['installedpackages']['service'] as $svc) {
+        if (($svc['name'] ?? '') === 'xray') {
+            $serviceExists = true;
+            break;
+        }
+    }
+    if (!$serviceExists) {
+        $config['installedpackages']['service'][] = [
+            'name'        => 'xray',
+            'rcfile'      => 'xray',
+            'executable'  => 'xray-core',
+            'description' => 'Xray VPN (xray-core + tunnel)',
+        ];
+    }
 }
 
 function xray_bootstrap_default_group(): void
@@ -667,4 +743,40 @@ function xray_deinstall(): void
     foreach ($patterns as $pattern) {
         array_map('unlink', glob($pattern) ?: []);
     }
+
+    xray_unregister_menu();
+
+    unset($config['installedpackages']['xray']);
+    unset($config['installedpackages']['xrayinstances']);
+    unset($config['installedpackages']['xraygroups']);
+    unset($config['installedpackages']['xrayconnections']);
+}
+
+function xray_unregister_menu(): void
+{
+    global $config;
+
+    $filtered = [];
+    foreach ($config['installedpackages']['package'] ?? [] as $pkg) {
+        if (($pkg['name'] ?? '') !== 'xray') {
+            $filtered[] = $pkg;
+        }
+    }
+    $config['installedpackages']['package'] = $filtered;
+
+    $filtered = [];
+    foreach ($config['installedpackages']['menu'] ?? [] as $item) {
+        if (($item['name'] ?? '') !== 'Xray') {
+            $filtered[] = $item;
+        }
+    }
+    $config['installedpackages']['menu'] = $filtered;
+
+    $filteredSvc = [];
+    foreach ($config['installedpackages']['service'] ?? [] as $svc) {
+        if (($svc['name'] ?? '') !== 'xray') {
+            $filteredSvc[] = $svc;
+        }
+    }
+    $config['installedpackages']['service'] = $filteredSvc;
 }
