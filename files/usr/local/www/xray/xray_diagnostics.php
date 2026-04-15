@@ -168,6 +168,7 @@ events.push(function() {
             ['<?= gettext('xray-core Uptime') ?>', data.xray_uptime || '&mdash;'],
             ['<?= gettext('Tunnel Uptime') ?>', data.tun2socks_uptime || '&mdash;'],
             ['<?= gettext('Server') ?>',           data.server_address || '&mdash;'],
+            ['<?= gettext('Ping RTT') ?>',         data.ping_rtt || '&mdash;'],
         ];
 
         var html = '';

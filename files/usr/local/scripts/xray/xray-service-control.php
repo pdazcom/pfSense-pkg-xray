@@ -152,7 +152,9 @@ function xray_parse_instance_array(array $inst, array $conn, bool $globalEnabled
         // mux
         'mux'                    => $conn['mux']                 ?? '',
         // config
-        'config_mode'            => ($conn['config_mode'] ?? 'wizard') ?: 'wizard',
+        'config_mode'            => trim($conn['custom_config'] ?? '') !== ''
+                                     ? 'custom'
+                                     : (($conn['config_mode'] ?? 'wizard') ?: 'wizard'),
         'custom_config'          => $conn['custom_config'] ?? '',
         'socks5_listen'          => ($inst['socks5_listen'] ?? '127.0.0.1') ?: '127.0.0.1',
         'socks5_port'            => (int)($inst['socks5_port'] ?? 10808) ?: 10808,
@@ -318,6 +320,17 @@ function xray_write_config(array $c): void
         if ($decoded === null) {
             echo "ERROR: custom_config is not valid JSON\n";
             return;
+        }
+        // Always override inbound port/listen from instance settings so that
+        // multiple instances using the same connection JSON don't collide.
+        if (isset($decoded['inbounds']) && is_array($decoded['inbounds'])) {
+            foreach ($decoded['inbounds'] as &$inbound) {
+                if (($inbound['tag'] ?? '') === 'socks-in' || ($inbound['protocol'] ?? '') === 'socks') {
+                    $inbound['port']   = (int)$c['socks5_port'];
+                    $inbound['listen'] = $c['socks5_listen'];
+                }
+            }
+            unset($inbound);
         }
         $json = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $json = xray_normalize_transport($json);
@@ -801,9 +814,13 @@ switch ($action) {
     case 'start':
         if ($inst_uuid !== '') {
             $c = xray_get_config($inst_uuid);
-            if (empty($c) || !$c['enabled']) {
-                echo "Xray is disabled or instance not found.\n";
-                exit(0);
+            if (empty($c)) {
+                echo "ERROR: Instance not found.\n";
+                exit(1);
+            }
+            if (!$c['enabled']) {
+                echo "ERROR: Xray is disabled. Go to VPN → Xray → Settings and enable it first.\n";
+                exit(2);
             }
             $ok = do_start($c);
             exit($ok ? 0 : 1);

@@ -1,9 +1,9 @@
 # pfSense-pkg-xray
 
-[![License](https://img.shields.io/github/license/MrTheory/pfsense-xray)](LICENSE)
+[![License](https://img.shields.io/github/license/pdazcom/pfSense-pkg-xray)](LICENSE)
 [![pfSense](https://img.shields.io/badge/pfSense-CE%202.7.x%20%2F%202.8.x-blue)](https://www.pfsense.org)
-[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64%20%2F%20aarch64-red)](https://freebsd.org)
-[![PHP](https://img.shields.io/badge/PHP-8.2-purple)](https://php.net)
+[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20%2F%2015.x%20amd64%20%2F%20aarch64-red)](https://freebsd.org)
+[![PHP](https://img.shields.io/badge/PHP-8.2%20%2F%208.3-purple)](https://php.net)
 
 **Xray-core VPN package for pfSense CE** — native GUI integration for VLESS+Reality tunnels with selective routing via pfSense Aliases and Firewall Rules.
 
@@ -57,8 +57,8 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 | Component  | Version                     |
 | ---------- | --------------------------- |
 | pfSense CE | 2.7.x / 2.8.x               |
-| FreeBSD    | 14.x amd64 / aarch64        |
-| PHP        | 8.2                         |
+| FreeBSD    | 14.x / 15.x amd64 / aarch64 |
+| PHP        | 8.2 / 8.3                   |
 | xray-core          | 24.x or later (recommended)     |
 | hev-socks5-tunnel  | 2.x (amd64)                     |
 | tun2socks          | 2.x (aarch64 fallback)          |
@@ -69,34 +69,43 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 
 ## Installation
 
-### Step 1 — Clone the repository on pfSense
+### One-line install (recommended)
 
 SSH into pfSense and run:
 
 ```sh
-cd /tmp
-git clone https://github.com/MrTheory/pfsense-xray.git
-cd pfsense-xray
+fetch -o /tmp/install.sh https://raw.githubusercontent.com/pdazcom/pfSense-pkg-xray/main/install.sh && sh /tmp/install.sh
 ```
 
-### Step 2 — Run install.sh
-
-```sh
-sh install.sh
-```
+> **Why `fetch` instead of `curl`?** pfSense/FreeBSD ships `fetch` by default. `curl` may not be available without installing it separately.
 
 The script will:
 
-- Download `xray-core` and `hev-socks5-tunnel` (amd64) or `tun2socks` (aarch64) from GitHub Releases via `fetch`
+- Download `xray-core` and `hev-socks5-tunnel` (amd64) or `tun2socks` (aarch64) from GitHub Releases
 - Install binaries to `/usr/local/bin/xray-core` and `/usr/local/tun2socks/`
 - Copy all package files to the correct pfSense filesystem locations
 - Load the `if_tun` kernel module
 - Configure log rotation (`/etc/newsyslog.conf.d/xray.conf`)
 - Register the package in pfSense (adds **VPN → Xray** menu)
 
-### Step 3 — Enable the package
+### Step 2 — Enable the package
 
 Open pfSense web UI → **VPN → Xray → Settings** → check **Enable Xray** → **Save**.
+
+---
+
+### Alternative: install via git clone
+
+If you prefer to have the full source available (e.g. for development or customization):
+
+```sh
+cd /tmp
+git clone https://github.com/pdazcom/pfSense-pkg-xray.git
+cd pfSense-pkg-xray
+sh install.sh
+```
+
+> `git` is not installed on pfSense by default. Install it first: **System → Package Manager → Available Packages** → search `git` → Install.
 
 ---
 
@@ -216,7 +225,13 @@ After starting an instance, configure pfSense to route selected traffic through 
 ## Updating
 
 ```sh
-cd /tmp/pfsense-xray
+fetch -o /tmp/install.sh https://raw.githubusercontent.com/pdazcom/pfSense-pkg-xray/main/install.sh && sh /tmp/install.sh update
+```
+
+Or, if installed via git clone:
+
+```sh
+cd /tmp/pfSense-pkg-xray
 git pull
 sh install.sh update
 ```
@@ -226,7 +241,13 @@ sh install.sh update
 ## Uninstalling
 
 ```sh
-cd /tmp/pfsense-xray
+fetch -o /tmp/install.sh https://raw.githubusercontent.com/pdazcom/pfSense-pkg-xray/main/install.sh && sh /tmp/install.sh uninstall
+```
+
+Or, if installed via git clone:
+
+```sh
+cd /tmp/pfSense-pkg-xray
 sh install.sh uninstall
 ```
 

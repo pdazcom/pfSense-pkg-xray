@@ -108,8 +108,9 @@ foreach ($allConnections as $conn) {
             break;
         }
     }
+    $serverLabel = xray_connection_server_label($conn);
     $label = ($groupName !== '' ? $groupName . ' / ' : '') . ($conn['name'] ?? '')
-        . ' (' . ($conn['server_address'] ?? '') . ':' . ($conn['server_port'] ?? '') . ')';
+        . ($serverLabel !== '' ? ' (' . $serverLabel . ')' : '');
     $connectionOptions[$conn['uuid']] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
 }
 

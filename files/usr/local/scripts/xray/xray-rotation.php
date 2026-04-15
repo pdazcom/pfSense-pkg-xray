@@ -135,7 +135,7 @@ function rotation_urltest(array $conn, string $testUrl): array
 
 function rotation_build_config(array $conn, int $socksPort): ?string
 {
-    $configMode = $conn['config_mode'] ?? 'wizard';
+    $configMode = trim($conn['custom_config'] ?? '') !== '' ? 'custom' : (($conn['config_mode'] ?? 'wizard') ?: 'wizard');
 
     if ($configMode === 'custom') {
         $raw = trim($conn['custom_config'] ?? '');
