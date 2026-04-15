@@ -629,7 +629,7 @@ function xray_register_menu(): void
     if (!$packageExists) {
         $config['installedpackages']['package'][] = [
             'name'         => 'xray',
-            'version'      => '1.2.0',
+            'version'      => '1.2.4',
             'descr'        => 'Xray VPN (xray-core + tunnel)',
             'include_file' => '/usr/local/pkg/xray/includes/xray.inc',
         ];
