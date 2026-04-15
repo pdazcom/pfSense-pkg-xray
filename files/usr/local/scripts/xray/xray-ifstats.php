@@ -47,25 +47,26 @@ $tunIface  = $inst['tun_interface'] ?? 'proxytun0';
 $xrayPid   = "/var/run/xray_core_{$inst_uuid}.pid";
 $t2sPid    = "/var/run/tunnel_{$inst_uuid}.pid";
 
-$serverAddr = '';
-$connUuid   = $inst['connection_uuid'] ?? ($inst['active_connection_uuid'] ?? '');
+$serverLabel = '';
+$serverHost  = '';
+$connUuid    = $inst['connection_uuid'] ?? ($inst['active_connection_uuid'] ?? '');
 if ($connUuid !== '') {
     $conn = xray_get_connection_by_uuid($connUuid);
     if ($conn !== null) {
-        $serverAddr = ifstats_server_label($conn);
+        [$serverHost, $serverLabel] = ifstats_server_parts($conn);
     }
 }
-if ($serverAddr === '') {
+if ($serverLabel === '') {
     $groupUuid = $inst['connection_group_uuid'] ?? '';
     if ($groupUuid !== '') {
         $groupConns = xray_get_connections_by_group($groupUuid);
         if (!empty($groupConns)) {
-            $serverAddr = ifstats_server_label($groupConns[0]);
+            [$serverHost, $serverLabel] = ifstats_server_parts($groupConns[0]);
         }
     }
 }
 
-function ifstats_server_label(array $conn): string
+function ifstats_server_parts(array $conn): array
 {
     $json = trim($conn['custom_config'] ?? '');
     if ($json !== '') {
@@ -73,14 +74,14 @@ function ifstats_server_label(array $conn): string
         $address = $decoded['outbounds'][0]['settings']['vnext'][0]['address'] ?? '';
         $port    = $decoded['outbounds'][0]['settings']['vnext'][0]['port']    ?? '';
         if ($address !== '') {
-            return $address . ':' . $port;
+            return [$address, $address . ':' . $port];
         }
     }
     $addr = trim($conn['server_address'] ?? '');
     if ($addr !== '') {
-        return $addr . ':' . ($conn['server_port'] ?? '443');
+        return [$addr, $addr . ':' . ($conn['server_port'] ?? '443')];
     }
-    return '';
+    return ['', ''];
 }
 
 // ─── Process uptime ───────────────────────────────────────────────────────────
@@ -214,8 +215,8 @@ $t2sUptimeSecs  = proc_uptime($t2sPid);
 
 // ─── Ping RTT to VPN server ───────────────────────────────────────────────────
 $pingRtt = 'N/A';
-if ($serverAddr !== '') {
-    exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverAddr) . ' 2>/dev/null', $pingOut, $pingRc);
+if ($serverHost !== '') {
+    exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverHost) . ' 2>/dev/null', $pingOut, $pingRc);
     if ($pingRc === 0) {
         $pingOutput = implode("\n", $pingOut);
         if (preg_match('/round-trip.+=\s*[\d.]+\/([\d.]+)\//', $pingOutput, $pm)) {
@@ -241,7 +242,7 @@ $result = [
     'xray_uptime_secs'      => $xrayUptimeSecs,
     'tun2socks_uptime'      => xray_format_uptime($t2sUptimeSecs),
     'tun2socks_uptime_secs' => $t2sUptimeSecs,
-    'server_address'        => $serverAddr,
+    'server_address'        => $serverLabel,
     'ping_rtt'              => $pingRtt,
 ];
 
