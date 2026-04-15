@@ -311,6 +311,8 @@ cmd_remove_files() {
     rm -rf /usr/local/pkg/xray
     rm -f  /usr/local/etc/rc.d/xray.sh
     rm -f  /etc/newsyslog.conf.d/xray.conf
+    rm -f  /var/log/xray-core.log
+    rm -f  /var/log/xray-watchdog.log
 
     ok "Package files removed"
 }

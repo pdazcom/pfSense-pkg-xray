@@ -2,8 +2,8 @@
 
 [![License](https://img.shields.io/github/license/pdazcom/pfSense-pkg-xray)](LICENSE)
 [![pfSense](https://img.shields.io/badge/pfSense-CE%202.7.x%20%2F%202.8.x-blue)](https://www.pfsense.org)
-[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64%20%2F%20aarch64-red)](https://freebsd.org)
-[![PHP](https://img.shields.io/badge/PHP-8.2-purple)](https://php.net)
+[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20%2F%2015.x%20amd64%20%2F%20aarch64-red)](https://freebsd.org)
+[![PHP](https://img.shields.io/badge/PHP-8.2%20%2F%208.3-purple)](https://php.net)
 
 **Xray-core VPN package for pfSense CE** — native GUI integration for VLESS+Reality tunnels with selective routing via pfSense Aliases and Firewall Rules.
 
@@ -57,8 +57,8 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 | Component  | Version                     |
 | ---------- | --------------------------- |
 | pfSense CE | 2.7.x / 2.8.x               |
-| FreeBSD    | 14.x amd64 / aarch64        |
-| PHP        | 8.2                         |
+| FreeBSD    | 14.x / 15.x amd64 / aarch64 |
+| PHP        | 8.2 / 8.3                   |
 | xray-core          | 24.x or later (recommended)     |
 | hev-socks5-tunnel  | 2.x (amd64)                     |
 | tun2socks          | 2.x (aarch64 fallback)          |
@@ -241,7 +241,13 @@ sh install.sh update
 ## Uninstalling
 
 ```sh
-cd /tmp/pfsense-xray
+fetch -o /tmp/install.sh https://raw.githubusercontent.com/pdazcom/pfSense-pkg-xray/main/install.sh && sh /tmp/install.sh uninstall
+```
+
+Or, if installed via git clone:
+
+```sh
+cd /tmp/pfSense-pkg-xray
 sh install.sh uninstall
 ```
 
