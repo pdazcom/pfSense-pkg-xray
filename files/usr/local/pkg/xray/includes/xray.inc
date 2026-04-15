@@ -745,6 +745,11 @@ function xray_deinstall(): void
     }
 
     xray_unregister_menu();
+
+    unset($config['installedpackages']['xray']);
+    unset($config['installedpackages']['xrayinstances']);
+    unset($config['installedpackages']['xraygroups']);
+    unset($config['installedpackages']['xrayconnections']);
 }
 
 function xray_unregister_menu(): void
