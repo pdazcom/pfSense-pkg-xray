@@ -51,14 +51,36 @@ $serverAddr = '';
 $connUuid   = $inst['connection_uuid'] ?? ($inst['active_connection_uuid'] ?? '');
 if ($connUuid !== '') {
     $conn = xray_get_connection_by_uuid($connUuid);
-    $serverAddr = $conn['server_address'] ?? '';
+    if ($conn !== null) {
+        $serverAddr = ifstats_server_label($conn);
+    }
 }
 if ($serverAddr === '') {
     $groupUuid = $inst['connection_group_uuid'] ?? '';
     if ($groupUuid !== '') {
         $groupConns = xray_get_connections_by_group($groupUuid);
-        $serverAddr = $groupConns[0]['server_address'] ?? '';
+        if (!empty($groupConns)) {
+            $serverAddr = ifstats_server_label($groupConns[0]);
+        }
     }
+}
+
+function ifstats_server_label(array $conn): string
+{
+    $json = trim($conn['custom_config'] ?? '');
+    if ($json !== '') {
+        $decoded = json_decode($json, true);
+        $address = $decoded['outbounds'][0]['settings']['vnext'][0]['address'] ?? '';
+        $port    = $decoded['outbounds'][0]['settings']['vnext'][0]['port']    ?? '';
+        if ($address !== '') {
+            return $address . ':' . $port;
+        }
+    }
+    $addr = trim($conn['server_address'] ?? '');
+    if ($addr !== '') {
+        return $addr . ':' . ($conn['server_port'] ?? '443');
+    }
+    return '';
 }
 
 // ─── Process uptime ───────────────────────────────────────────────────────────

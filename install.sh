@@ -75,10 +75,35 @@ ok()    { echo "    [OK] $*"; }
 die()   { echo "[ERROR] $*" >&2; exit 1; }
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+REPO_DOWNLOADED=0
 
 # ─── Verify we're running on pfSense ─────────────────────────────────────────
 if [ ! -f /etc/inc/config.inc ]; then
     die "This script must be run on pfSense (FreeBSD). /etc/inc/config.inc not found."
+fi
+
+# ─── Auto-fetch package files if running as standalone install.sh ─────────────
+# When the script is fetched directly (not from a git clone), the files/ tree
+# won't be present next to it.  Download and unpack the repository archive so
+# cmd_deploy_files has something to copy from.
+GITHUB_REPO="pdazcom/pfSense-pkg-xray"
+GITHUB_BRANCH="main"
+
+if [ ! -d "${REPO_ROOT}/files" ]; then
+    ARCHIVE_URL="https://github.com/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
+    ARCHIVE_TMP="/tmp/pfsense-pkg-xray-src-$$.tar.gz"
+    EXTRACT_DIR="/tmp/pfsense-pkg-xray-src-$$"
+
+    info "Package source not found locally — downloading from GitHub..."
+    fetch -q -o "${ARCHIVE_TMP}" "${ARCHIVE_URL}" || die "Failed to download package source from GitHub"
+
+    mkdir -p "${EXTRACT_DIR}"
+    tar -xzf "${ARCHIVE_TMP}" -C "${EXTRACT_DIR}" --strip-components=1 || die "Failed to extract package source"
+    rm -f "${ARCHIVE_TMP}"
+
+    REPO_ROOT="${EXTRACT_DIR}"
+    REPO_DOWNLOADED=1
+    ok "Package source downloaded"
 fi
 
 # ─── Architecture detection ───────────────────────────────────────────────────
@@ -209,15 +234,34 @@ EOF
 cmd_register_package() {
     info "Registering package in pfSense..."
 
-    php -r "
-set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear');
+    # On pfSense 2.8.1+ the DHCP service was moved to a package, so
+    # services.inc → services_dhcp.inc no longer exists in the base system.
+    # We stub it out in a temp directory placed first on the include path so
+    # the bootstrap chain completes on both 2.7.x and 2.8.x.
+    STUB_DIR="/tmp/xray-inc-stub-$$"
+    mkdir -p "${STUB_DIR}"
+    printf '<?php\n' > "${STUB_DIR}/services_dhcp.inc"
+
+    PHP_SCRIPT="/tmp/xray-register-$$.php"
+    cat > "${PHP_SCRIPT}" << 'PHPEOF'
+<?php
+set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear' . PATH_SEPARATOR . ini_get('include_path'));
 require_once('globals.inc');
 require_once('config.inc');
 require_once('/usr/local/pkg/xray/includes/xray.inc');
 xray_install();
 write_config('Xray: package installed');
-echo 'done';
-" || die "Failed to register package"
+echo 'done' . PHP_EOL;
+PHPEOF
+
+    if php -d "include_path=${STUB_DIR}:/etc/inc:/usr/local/share/pear" "${PHP_SCRIPT}"; then
+        rm -f "${PHP_SCRIPT}"
+        rm -rf "${STUB_DIR}"
+    else
+        rm -f "${PHP_SCRIPT}"
+        rm -rf "${STUB_DIR}"
+        die "Failed to register package"
+    fi
 
     ok "Package registered (VPN → Xray menu added)"
 }
@@ -235,15 +279,25 @@ cmd_stop_all() {
 cmd_deregister_package() {
     info "Removing package from pfSense config..."
 
-    php -r "
-set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear');
+    STUB_DIR="/tmp/xray-inc-stub-$$"
+    mkdir -p "${STUB_DIR}"
+    printf '<?php\n' > "${STUB_DIR}/services_dhcp.inc"
+
+    PHP_SCRIPT="/tmp/xray-deregister-$$.php"
+    cat > "${PHP_SCRIPT}" << 'PHPEOF'
+<?php
+set_include_path('/etc/inc' . PATH_SEPARATOR . '/usr/local/share/pear' . PATH_SEPARATOR . ini_get('include_path'));
 require_once('globals.inc');
 require_once('config.inc');
 require_once('/usr/local/pkg/xray/includes/xray.inc');
 xray_deinstall();
 write_config('Xray: package removed');
-echo 'done';
-" 2>/dev/null || true
+echo 'done' . PHP_EOL;
+PHPEOF
+
+    php -d "include_path=${STUB_DIR}:/etc/inc:/usr/local/share/pear" "${PHP_SCRIPT}" 2>/dev/null || true
+    rm -f "${PHP_SCRIPT}"
+    rm -rf "${STUB_DIR}"
 
     ok "Package deregistered"
 }
@@ -337,3 +391,8 @@ case "${COMMAND}" in
         ;;
 
 esac
+
+# ─── Cleanup downloaded source tree ──────────────────────────────────────────
+if [ "${REPO_DOWNLOADED}" -eq 1 ] && [ -d "${REPO_ROOT}" ]; then
+    rm -rf "${REPO_ROOT}"
+fi
