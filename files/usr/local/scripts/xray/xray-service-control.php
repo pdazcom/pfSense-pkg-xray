@@ -262,6 +262,11 @@ function xray_build_config_array(array $c): array
         $bypassNets = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
     }
 
+    $serverIp = $c['server'] ?? '';
+    if ($serverIp !== '' && filter_var($serverIp, FILTER_VALIDATE_IP)) {
+        $bypassNets[] = $serverIp;
+    }
+
     return [
         'log'      => ['loglevel' => $c['loglevel'] ?: 'warning'],
         'inbounds' => [[
