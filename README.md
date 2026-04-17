@@ -186,8 +186,7 @@ After starting an instance, configure pfSense to route selected traffic through 
 - Gateway IP: TUN IP + 1 (shown in **Diagnostics → TUN IP**)
   (e.g. if TUN IP is `10.100.66.46`, gateway is `10.100.66.47`)
 - Name: `XRAY_GW`
-- Monitor IP: same as Gateway IP (`10.100.66.47`) — **important**: do not use an external IP,
-  ICMP won't pass through the tunnel and the gateway will be marked down
+- Monitor IP: **leave blank** — the tunnel bridge does not forward ICMP, so any monitor IP will cause the gateway to be marked down; disable monitoring entirely
 
 ### 2. Create an Alias
 
@@ -371,7 +370,9 @@ ifconfig proxytun0
 
 **Gateway is marked down**
 
-Make sure **Monitor IP** is set to the gateway peer address (TUN IP + 1, e.g. `10.100.66.47` when TUN IP is `10.100.66.46`), not an external IP. The tunnel bridge does not forward ICMP, so pinging external IPs through the gateway will always fail.
+The tunnel bridge (hev-socks5-tunnel / tun2socks) does not forward ICMP, so pfSense gateway monitoring will always fail — the monitor ping never gets a reply, and the gateway is marked down.
+
+**Disable monitoring** on the Xray gateway: **System → Routing → Gateways → Edit** → set **Monitor IP** to blank (or uncheck **Monitor Gateway**). With monitoring disabled, pfSense keeps the gateway up regardless of ping results, and policy-based routing continues to work normally.
 
 **Traffic not routing through tunnel**
 
