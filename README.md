@@ -183,8 +183,8 @@ After starting an instance, configure pfSense to route selected traffic through 
 **System → Routing → Gateways → Add**:
 
 - Interface: select the Xray TUN interface (appears as OPTx)
-- Gateway IP: TUN IP + 1 (shown in **Diagnostics → TUN IP**)
-  (e.g. if TUN IP is `10.100.66.46`, gateway is `10.100.66.47`)
+- Gateway IP: same as TUN IP (shown in **Diagnostics → TUN IP**)
+  (e.g. if TUN IP is `10.100.66.46`, gateway is `10.100.66.46`)
 - Name: `XRAY_GW`
 - Monitor IP: **leave blank** — the tunnel bridge does not forward ICMP, so any monitor IP will cause the gateway to be marked down; disable monitoring entirely
 
