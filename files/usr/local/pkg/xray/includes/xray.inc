@@ -515,16 +515,16 @@ function xray_register_tun_interface(string $ifname, string $uuid): void
     global $config;
 
     $key   = xray_find_interface_key($ifname);
-    $descr = 'Xray_' . substr($uuid, 0, 8);
+    $descr = 'Xray_' . strtoupper(substr($uuid, 0, 8));
+    $ip    = xray_tun_ip_for_uuid($uuid);
 
     $config['interfaces'][$key] = [
         'if'      => $ifname,
         'descr'   => $descr,
-        'enable'  => '',
-        'ipaddr'  => 'none',
-        'subnet'  => '',
+        'enable'  => 'enable',
+        'ipaddr'  => $ip,
+        'subnet'  => '30',
         'spoofmac'=> '',
-        'type'    => 'none',
     ];
 }
 

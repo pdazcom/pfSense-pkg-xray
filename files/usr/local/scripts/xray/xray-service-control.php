@@ -262,6 +262,28 @@ function xray_build_config_array(array $c): array
         $bypassNets = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
     }
 
+    $server = $c['server'] ?? '';
+    $routingRules = [];
+
+    if ($server !== '') {
+        if (filter_var($server, FILTER_VALIDATE_IP)) {
+            $bypassNets[] = $server;
+        } else {
+            $routingRules[] = [
+                'type'        => 'field',
+                'domain'      => [$server],
+                'outboundTag' => 'direct',
+            ];
+        }
+    }
+
+    $routingRules[] = [
+        'type'        => 'field',
+        'ip'          => $bypassNets,
+        'outboundTag' => 'direct',
+    ];
+
+
     return [
         'log'      => ['loglevel' => $c['loglevel'] ?: 'warning'],
         'inbounds' => [[
@@ -277,11 +299,7 @@ function xray_build_config_array(array $c): array
         ],
         'routing' => [
             'domainStrategy' => 'IPIfNonMatch',
-            'rules' => [[
-                'type'        => 'field',
-                'ip'          => $bypassNets,
-                'outboundTag' => 'direct',
-            ]],
+            'rules'          => $routingRules,
         ],
     ];
 }
@@ -353,10 +371,10 @@ function xray_tun_ip_for_uuid(string $uuid): string
 
 function xray_tun_gw_for_uuid(string $uuid): string
 {
-    $crc    = crc32($uuid) & 0xFFFF;
-    $octet  = ($crc % 62) + 1;
-    $block  = ($crc >> 6) % 254 + 1;
-    return "10.100.{$block}." . ($octet - 1);
+    $crc   = crc32($uuid) & 0xFFFF;
+    $octet = ($crc % 62) + 1;
+    $block = ($crc >> 6) % 254 + 1;
+    return "10.100.{$block}." . ($octet + 1);
 }
 
 function t2s_write_config(array $c): void
