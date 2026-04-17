@@ -210,6 +210,26 @@ After starting an instance, configure pfSense to route selected traffic through 
 
 ---
 
+## ICMP / Ping Behavior
+
+The tunnel bridge (hev-socks5-tunnel / tun2socks) forwards TCP and UDP traffic only. ICMP is not tunneled — ping packets do not travel through the Xray proxy.
+
+As a result, if you route traffic toward an Xray gateway, **ping will not work** for that traffic even when HTTP/HTTPS works fine. This is expected.
+
+**To allow ping for routed hosts**, add a separate firewall rule above the Xray rule:
+
+- Action: Pass
+- Protocol: ICMP
+- Source: LAN net (or the same source as your main rule)
+- Destination: the same Alias
+- Advanced Options → Gateway: *default* (no gateway override — route directly)
+
+ICMP traffic will then bypass the tunnel and go out through the normal WAN. Ping replies will carry your **router's public IP**, not the Xray server IP.
+
+> **Outbound NAT required.** Make sure **Firewall → NAT → Outbound** covers the source subnet for this ICMP traffic on the WAN interface. Without an outbound NAT mapping, echo requests leave but replies may not return correctly.
+
+---
+
 ## Diagnostics
 
 **VPN → Xray → Diagnostics**
