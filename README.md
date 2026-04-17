@@ -183,10 +183,10 @@ After starting an instance, configure pfSense to route selected traffic through 
 **System → Routing → Gateways → Add**:
 
 - Interface: select the Xray TUN interface (appears as OPTx)
-- Gateway IP: second address of the /30 subnet shown in **Diagnostics → TUN IP**
-  (e.g. if TUN IP is `10.100.66.46/30`, gateway is `10.100.66.45`)
+- Gateway IP: TUN IP + 1 (shown in **Diagnostics → TUN IP**)
+  (e.g. if TUN IP is `10.100.66.46`, gateway is `10.100.66.47`)
 - Name: `XRAY_GW`
-- Monitor IP: same as Gateway IP (`10.100.66.45`) — **important**: do not use an external IP,
+- Monitor IP: same as Gateway IP (`10.100.66.47`) — **important**: do not use an external IP,
   ICMP won't pass through the tunnel and the gateway will be marked down
 
 ### 2. Create an Alias
@@ -351,7 +351,7 @@ ifconfig proxytun0
 
 **Gateway is marked down**
 
-Make sure **Monitor IP** is set to the gateway peer address (e.g. `10.100.66.45`), not an external IP. The tunnel bridge does not forward ICMP, so pinging external IPs through the gateway will always fail.
+Make sure **Monitor IP** is set to the gateway peer address (TUN IP + 1, e.g. `10.100.66.47` when TUN IP is `10.100.66.46`), not an external IP. The tunnel bridge does not forward ICMP, so pinging external IPs through the gateway will always fail.
 
 **Traffic not routing through tunnel**
 

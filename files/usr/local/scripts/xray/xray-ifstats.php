@@ -216,7 +216,8 @@ $t2sUptimeSecs  = proc_uptime($t2sPid);
 // ─── Ping RTT to VPN server ───────────────────────────────────────────────────
 $pingRtt = 'N/A';
 if ($serverHost !== '') {
-    exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverHost) . ' 2>/dev/null', $pingOut, $pingRc);
+    $pingBin = filter_var($serverHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? '/sbin/ping6' : '/sbin/ping';
+    exec($pingBin . ' -c 3 -W 2 ' . escapeshellarg($serverHost) . ' 2>/dev/null', $pingOut, $pingRc);
     if ($pingRc === 0) {
         $pingOutput = implode("\n", $pingOut);
         if (preg_match('/round-trip.+=\s*[\d.]+\/([\d.]+)\//', $pingOutput, $pm)) {
