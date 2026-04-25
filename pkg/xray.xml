@@ -17,7 +17,7 @@
 	]]>
 	</copyright>
 	<name>xray</name>
-	<version>1.2.7</version>
+	<version>1.2.8</version>
 	<title>VPN/Xray</title>
 	<include_file>/usr/local/pkg/xray/includes/xray.inc</include_file>
 	<menu>
