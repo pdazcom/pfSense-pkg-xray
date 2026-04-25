@@ -242,6 +242,18 @@ function xray_delete_instance(string $uuid): void
     write_config('Xray: delete instance ' . $uuid);
 }
 
+// ─── Group helpers ────────────────────────────────────────────────────────────
+
+function xray_group_sub_urls(array $group): array
+{
+    if (isset($group['sub_urls']) && $group['sub_urls'] !== '') {
+        $lines = preg_split('/[\r\n]+/', $group['sub_urls']);
+        return array_values(array_filter(array_map('trim', $lines)));
+    }
+    $legacy = trim($group['sub_url'] ?? '');
+    return $legacy !== '' ? [$legacy] : [];
+}
+
 // ─── Group CRUD ──────────────────────────────────────────────────────────────
 
 function xray_get_groups(): array
@@ -693,7 +705,7 @@ function xray_bootstrap_default_group(): void
         'uuid'       => XRAY_DEFAULT_GROUP_UUID,
         'name'       => 'Default',
         'type'       => 'manual',
-        'sub_url'    => '',
+        'sub_urls'   => '',
         'autoupdate' => '',
     ]);
 
