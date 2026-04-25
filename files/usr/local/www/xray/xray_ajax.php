@@ -291,6 +291,34 @@ switch ($action) {
         echo json_encode(['error' => 'Unknown action: ' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8')]);
 }
 
+function xray_fetch_links_from_url(string $url): array
+{
+    $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+    $rawOut  = [];
+    exec(
+        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
+        . ' ' . escapeshellarg($url)
+        . ' 2>/dev/null',
+        $rawOut,
+        $curlRc
+    );
+
+    if ($curlRc !== 0 || empty($rawOut)) {
+        return [];
+    }
+
+    $raw     = implode("\n", $rawOut);
+    $decoded = base64_decode(trim($raw), true);
+    if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
+        $raw = $decoded;
+    }
+
+    $lines = array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw)));
+    return array_values(array_filter($lines, static function (string $line): bool {
+        return strpos($line, 'vless://') === 0;
+    }));
+}
+
 function xray_ajax_update_subscription(string $groupUuid): array
 {
     $group = xray_get_group_by_uuid($groupUuid);
@@ -301,35 +329,22 @@ function xray_ajax_update_subscription(string $groupUuid): array
         return ['error' => 'Group is not a subscription group'];
     }
 
-    $subUrl = trim($group['sub_url'] ?? '');
-    if ($subUrl === '') {
+    $urls = xray_group_sub_urls($group);
+    if (empty($urls)) {
         return ['error' => 'Subscription URL is empty'];
     }
 
-    $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
-    $rawOut  = [];
-    exec(
-        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
-        . ' ' . escapeshellarg($subUrl)
-        . ' 2>/dev/null',
-        $rawOut,
-        $curlRc
-    );
-
-    if ($curlRc !== 0 || empty($rawOut)) {
-        return ['error' => 'Failed to fetch subscription URL (curl exit ' . $curlRc . ')'];
+    $fetchedLinks = [];
+    $seenKeys     = [];
+    foreach ($urls as $url) {
+        foreach (xray_fetch_links_from_url($url) as $link) {
+            $key = md5($link);
+            if (!isset($seenKeys[$key])) {
+                $seenKeys[$key]  = true;
+                $fetchedLinks[]  = $link;
+            }
+        }
     }
-
-    $raw     = implode("\n", $rawOut);
-    $decoded = base64_decode(trim($raw), true);
-    if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
-        $raw = $decoded;
-    }
-
-    $lines = array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw)));
-    $fetchedLinks = array_values(array_filter($lines, static function (string $line): bool {
-        return strpos($line, 'vless://') === 0;
-    }));
 
     if (empty($fetchedLinks)) {
         return ['error' => 'No vless:// links found in subscription'];

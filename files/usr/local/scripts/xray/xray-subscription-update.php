@@ -44,39 +44,55 @@ if (($group['type'] ?? 'manual') !== 'subscription') {
     exit(1);
 }
 
-$subUrl = trim($group['sub_url'] ?? '');
-if ($subUrl === '') {
+$subUrls = [];
+if (isset($group['sub_urls']) && $group['sub_urls'] !== '') {
+    $subUrls = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $group['sub_urls']))));
+} elseif (($group['sub_url'] ?? '') !== '') {
+    $subUrls = [trim($group['sub_url'])];
+}
+
+if (empty($subUrls)) {
     echo json_encode(['error' => 'Subscription URL is empty']) . "\n";
     exit(1);
 }
 
 $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
 
-$curlOut = [];
-exec(
-    $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
-    . ' ' . escapeshellarg($subUrl)
-    . ' 2>/dev/null',
-    $curlOut,
-    $curlRc
-);
+$fetchedLinks = [];
+$seenKeys     = [];
 
-if ($curlRc !== 0 || empty($curlOut)) {
-    echo json_encode(['error' => 'Failed to fetch subscription URL (exit ' . $curlRc . ')']) . "\n";
-    exit(1);
+foreach ($subUrls as $subUrl) {
+    $curlOut = [];
+    exec(
+        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
+        . ' ' . escapeshellarg($subUrl)
+        . ' 2>/dev/null',
+        $curlOut,
+        $curlRc
+    );
+
+    if ($curlRc !== 0 || empty($curlOut)) {
+        continue;
+    }
+
+    $raw = implode("\n", $curlOut);
+
+    $decoded = base64_decode(trim($raw), true);
+    if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
+        $raw = $decoded;
+    }
+
+    $lines = array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw)));
+    foreach ($lines as $line) {
+        if (strpos($line, 'vless://') === 0) {
+            $key = md5($line);
+            if (!isset($seenKeys[$key])) {
+                $seenKeys[$key]  = true;
+                $fetchedLinks[]  = $line;
+            }
+        }
+    }
 }
-
-$raw = implode("\n", $curlOut);
-
-$decoded = base64_decode(trim($raw), true);
-if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
-    $raw = $decoded;
-}
-
-$lines = array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw)));
-$fetchedLinks = array_values(array_filter($lines, static function (string $line): bool {
-    return strpos($line, 'vless://') === 0;
-}));
 
 if (empty($fetchedLinks)) {
     echo json_encode(['error' => 'No vless:// links found in subscription']) . "\n";
