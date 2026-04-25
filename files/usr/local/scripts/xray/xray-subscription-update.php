@@ -72,7 +72,8 @@ foreach ($subUrls as $subUrl) {
     );
 
     if ($curlRc !== 0 || empty($curlOut)) {
-        continue;
+        echo json_encode(['error' => 'Failed to fetch subscription URL: ' . $subUrl]) . "\n";
+        exit(1);
     }
 
     $raw = implode("\n", $curlOut);
@@ -87,8 +88,8 @@ foreach ($subUrls as $subUrl) {
         if (strpos($line, 'vless://') === 0) {
             $key = md5($line);
             if (!isset($seenKeys[$key])) {
-                $seenKeys[$key]  = true;
-                $fetchedLinks[]  = $line;
+                $seenKeys[$key] = true;
+                $fetchedLinks[] = $line;
             }
         }
     }
