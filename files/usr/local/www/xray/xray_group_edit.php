@@ -26,13 +26,20 @@ $isNew = ($editUuid === '');
 $defaults = [
     'name'       => '',
     'type'       => 'manual',
-    'sub_url'    => '',
+    'sub_urls'   => '',
     'autoupdate' => '',
 ];
 
 if (!$isNew) {
     $existing = xray_get_group_by_uuid($editUuid);
-    $pconfig  = $existing !== null ? array_merge($defaults, $existing) : $defaults;
+    if ($existing !== null) {
+        $pconfig = array_merge($defaults, $existing);
+        if (!isset($existing['sub_urls']) || $existing['sub_urls'] === '') {
+            $pconfig['sub_urls'] = implode("\n", xray_group_sub_urls($existing));
+        }
+    } else {
+        $pconfig = $defaults;
+    }
 } else {
     $pconfig = $defaults;
 }
@@ -48,11 +55,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
         $type = in_array($_POST['type'] ?? '', ['manual', 'subscription'], true)
             ? $_POST['type'] : 'manual';
 
+        $subUrls = '';
+        if ($type === 'subscription') {
+            $rawLines = preg_split('/[\r\n]+/', $_POST['sub_urls'] ?? '');
+            $subUrls  = implode("\n", array_values(array_filter(array_map('trim', $rawLines))));
+        }
+
         $group = [
             'uuid'       => $newUuid,
             'name'       => trim($_POST['name'] ?? ''),
             'type'       => $type,
-            'sub_url'    => $type === 'subscription' ? trim($_POST['sub_url'] ?? '') : '',
+            'sub_urls'   => $subUrls,
             'autoupdate' => ($type === 'subscription' && !empty($_POST['autoupdate'])) ? 'on' : '',
         ];
 
@@ -62,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
         exit;
     }
 
-    $pconfig = array_merge($defaults, $_POST);
+    $pconfig         = array_merge($defaults, $_POST);
     $pconfig['uuid'] = $editUuid;
 }
 
@@ -107,13 +120,12 @@ $form->add($section);
 $sectionSub = new Form_Section(gettext('Subscription Settings'));
 $sectionSub->setAttribute('id', 'subscription-section');
 
-$sectionSub->addInput(new Form_Input(
-    'sub_url',
-    gettext('Subscription URL'),
-    'text',
-    $pconfig['sub_url'],
-    ['placeholder' => 'https://example.com/sub/...']
-))->setHelp(gettext('Remote URL returning a list of vless:// links (plain text or base64-encoded).'));
+$sectionSub->addInput(new Form_Textarea(
+    'sub_urls',
+    gettext('Subscription URLs'),
+    $pconfig['sub_urls'],
+    ['placeholder' => "https://provider1.example.com/sub/token1\nhttps://provider2.example.com/sub/token2", 'rows' => '4']
+))->setHelp(gettext('One URL per line. All URLs will be fetched and merged into a single pool of connections.'));
 
 $sectionSub->addInput(new Form_Checkbox(
     'autoupdate',

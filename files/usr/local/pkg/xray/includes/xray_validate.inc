@@ -114,11 +114,15 @@ function xray_validate_group(array $post, ?string $editUuid): void
     }
 
     if ($type === 'subscription') {
-        $subUrl = trim($post['sub_url'] ?? '');
-        if ($subUrl === '') {
-            $input_errors[] = 'Subscription URL is required for subscription groups.';
-        } elseif (!filter_var($subUrl, FILTER_VALIDATE_URL)) {
-            $input_errors[] = 'Subscription URL must be a valid URL.';
+        $lines = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $post['sub_urls'] ?? ''))));
+        if (empty($lines)) {
+            $input_errors[] = 'At least one subscription URL is required for subscription groups.';
+        } else {
+            foreach ($lines as $i => $url) {
+                if (!filter_var($url, FILTER_VALIDATE_URL)) {
+                    $input_errors[] = 'URL #' . ($i + 1) . ': "' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" is not a valid URL.';
+                }
+            }
         }
     }
 }
