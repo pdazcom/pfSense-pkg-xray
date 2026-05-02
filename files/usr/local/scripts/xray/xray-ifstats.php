@@ -43,7 +43,7 @@ if ($inst === null) {
     exit(1);
 }
 
-$tunIface  = $inst['tun_interface'] ?? 'proxytun0';
+$tunIface  = $inst['tun_interface'] ?? 'tunproxy0';
 $xrayPid   = "/var/run/xray_core_{$inst_uuid}.pid";
 $t2sPid    = "/var/run/tunnel_{$inst_uuid}.pid";
 

@@ -31,7 +31,7 @@ $defaults = [
     'webhook_url'            => '',
     'socks5_listen'          => '127.0.0.1',
     'socks5_port'            => '10808',
-    'tun_interface'          => 'proxytun0',
+    'tun_interface'          => 'tunproxy0',
     'mtu'                    => '1500',
     'loglevel'               => 'warning',
     'bypass_networks'        => '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
@@ -233,8 +233,8 @@ $sectionNetwork->addInput(new Form_Input(
     gettext('*TUN Interface'),
     'text',
     $pconfig['tun_interface'],
-    ['placeholder' => 'proxytun0', 'maxlength' => '15']
-))->setHelp(gettext('Must start with a lowercase letter and end with a digit (e.g. proxytun0).'));
+    ['placeholder' => 'tunproxy0', 'maxlength' => '15']
+))->setHelp(gettext('Must start with "tun" and end with a digit (e.g. tunproxy0). This prefix is required so pfSense skips the interface during boot-time checks.'));
 
 $sectionNetwork->addInput(new Form_Input(
     'mtu',

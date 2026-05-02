@@ -158,7 +158,7 @@ function xray_parse_instance_array(array $inst, array $conn, bool $globalEnabled
         'custom_config'          => $conn['custom_config'] ?? '',
         'socks5_listen'          => ($inst['socks5_listen'] ?? '127.0.0.1') ?: '127.0.0.1',
         'socks5_port'            => (int)($inst['socks5_port'] ?? 10808) ?: 10808,
-        'tun_iface'              => $inst['tun_interface']       ?? 'proxytun0',
+        'tun_iface'              => $inst['tun_interface']       ?? 'tunproxy0',
         'mtu'                    => (int)($inst['mtu'] ?? 1500),
         'loglevel'               => $loglevel,
         'bypass_networks'        => ($inst['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
@@ -650,7 +650,7 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
 {
     if ($tunIface === null) {
         $c        = xray_get_config($inst_uuid);
-        $tunIface = $c['tun_iface'] ?? 'proxytun0';
+        $tunIface = $c['tun_iface'] ?? 'tunproxy0';
     }
 
     proc_kill(t2s_pid_path($inst_uuid));
@@ -872,7 +872,7 @@ switch ($action) {
     case 'restart':
         if ($inst_uuid !== '') {
             $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'proxytun0';
+            $tunIface = $c['tun_iface'] ?? 'tunproxy0';
             do_stop($inst_uuid, $tunIface);
             sleep(1);
             if (!empty($c) && $c['enabled']) {
@@ -881,7 +881,7 @@ switch ($action) {
         } else {
             $all = xray_get_all_instances();
             foreach ($all as $uuid => $c) {
-                do_stop($uuid, $c['tun_iface'] ?? 'proxytun0');
+                do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
             }
             sleep(1);
             foreach ($all as $uuid => $c) {
@@ -895,7 +895,7 @@ switch ($action) {
     case 'reconfigure':
         if ($inst_uuid !== '') {
             $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'proxytun0';
+            $tunIface = $c['tun_iface'] ?? 'tunproxy0';
             do_stop($inst_uuid, $tunIface);
             sleep(1);
             if (!empty($c) && $c['enabled']) {
@@ -915,7 +915,7 @@ switch ($action) {
         $all       = xray_get_all_instances();
         $allStopped = [];
         foreach ($all as $uuid => $c) {
-            do_stop($uuid, $c['tun_iface'] ?? 'proxytun0');
+            do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
             $allStopped[$uuid] = $c;
         }
         sleep(1);

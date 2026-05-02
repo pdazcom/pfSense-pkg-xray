@@ -19,7 +19,7 @@ Ported from [os-xray](https://github.com/MrTheory/os-xray) (OPNsense plugin). Al
 xray-core  (VLESS+Reality outbound)
     ↓  SOCKS5  (127.0.0.1:10808, configurable)
 hev-socks5-tunnel  (amd64)  /  tun2socks  (aarch64 fallback)
-    ↓  TUN interface  (e.g. proxytun0)
+    ↓  TUN interface  (e.g. tunproxy0)
 pfSense Gateway  →  Firewall Rules  →  Selective routing
 ```
 
@@ -166,7 +166,7 @@ After updating, the connections list shows a ping result badge for each entry (r
 **VPN → Xray → Instances → Add Instance**
 
 1. Select a **Connection Group** — the instance will use connections from this group
-2. Set **TUN Interface** name (e.g. `proxytun0`) — must be unique per instance
+2. Set **TUN Interface** name (e.g. `tunproxy0`) — must be unique per instance
 3. Set **SOCKS5 Port** — must be unique per instance (default: `10808`)
 4. **Save** → **Start**
 
@@ -365,7 +365,7 @@ cat /usr/local/tun2socks/backend.txt
 ps aux | grep -E 'hev-socks5|tun2socks'
 
 # Check interface
-ifconfig proxytun0
+ifconfig tunproxy0
 ```
 
 **Gateway is marked down**
