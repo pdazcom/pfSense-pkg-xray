@@ -75,7 +75,7 @@ function xray_validate_input(array $post, ?string $editUuid): void
     }
 
     $tunIface = trim($post['tun_interface'] ?? '');
-    if (!preg_match('/^tun[a-z0-9]{1,10}[0-9]$/', $tunIface)) {
+    if (!preg_match('/^tun[a-z0-9]{0,11}[0-9]$/', $tunIface)) {
         $input_errors[] = 'TUN interface name must start with "tun", end with a digit, and be at most 15 characters (e.g. tunproxy0).';
     } else {
         xray_validate_tun_unique($tunIface, $editUuid);
