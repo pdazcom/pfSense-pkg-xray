@@ -125,23 +125,23 @@ function xray_validate_group(array $post, ?string $editUuid): void
             }
         }
 
-        $hwid = trim($post['hwid'] ?? '');
-        if ($hwid !== '') {
-            if (strlen($hwid) > 128 || !preg_match('/^[!-~]+$/', $hwid)) {
+        if (!empty($post['happ_enabled'])) {
+            $hwid = trim($post['hwid'] ?? '');
+            if ($hwid !== '' && (strlen($hwid) > 128 || !preg_match('/^[!-~]+$/', $hwid))) {
                 $input_errors[] = 'HWID must be printable ASCII without spaces, max 128 characters.';
             }
-        }
 
-        foreach ([
-            'happ_ua'        => ['User-Agent', 128],
-            'happ_device_os' => ['Device OS', 64],
-            'happ_model'     => ['Device Model', 64],
-            'happ_locale'    => ['Locale', 64],
-            'happ_os_ver'    => ['OS Version', 64],
-        ] as $field => [$label, $maxLen]) {
-            $val = trim($post[$field] ?? '');
-            if ($val !== '' && (strlen($val) > $maxLen || !preg_match('/^[\x20-\x7E]+$/', $val))) {
-                $input_errors[] = $label . ' must be printable ASCII, max ' . $maxLen . ' characters.';
+            foreach ([
+                'happ_ua'        => ['User-Agent', 128],
+                'happ_device_os' => ['Device OS', 64],
+                'happ_model'     => ['Device Model', 64],
+                'happ_locale'    => ['Locale', 64],
+                'happ_os_ver'    => ['OS Version', 64],
+            ] as $field => [$label, $maxLen]) {
+                $val = trim($post[$field] ?? '');
+                if ($val !== '' && (strlen($val) > $maxLen || !preg_match('/^[\x20-\x7E]+$/', $val))) {
+                    $input_errors[] = $label . ' must be printable ASCII, max ' . $maxLen . ' characters.';
+                }
             }
         }
     }
