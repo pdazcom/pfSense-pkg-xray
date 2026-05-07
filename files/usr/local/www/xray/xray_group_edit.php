@@ -24,10 +24,17 @@ $editUuid = xray_sanitize_uuid($_GET['uuid'] ?? $_POST['uuid'] ?? '');
 $isNew = ($editUuid === '');
 
 $defaults = [
-    'name'       => '',
-    'type'       => 'manual',
-    'sub_urls'   => '',
-    'autoupdate' => '',
+    'name'           => '',
+    'type'           => 'manual',
+    'sub_urls'       => '',
+    'autoupdate'     => '',
+    'happ_enabled'   => '',
+    'hwid'           => '',
+    'happ_ua'        => 'Happ/3.13.0',
+    'happ_device_os' => 'Android',
+    'happ_model'     => '',
+    'happ_locale'    => 'ru',
+    'happ_os_ver'    => '15',
 ];
 
 if (!$isNew) {
@@ -62,11 +69,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
         }
 
         $group = [
-            'uuid'       => $newUuid,
-            'name'       => trim($_POST['name'] ?? ''),
-            'type'       => $type,
-            'sub_urls'   => $subUrls,
-            'autoupdate' => ($type === 'subscription' && !empty($_POST['autoupdate'])) ? 'on' : '',
+            'uuid'           => $newUuid,
+            'name'           => trim($_POST['name'] ?? ''),
+            'type'           => $type,
+            'sub_urls'       => $subUrls,
+            'autoupdate'     => ($type === 'subscription' && !empty($_POST['autoupdate'])) ? 'on' : '',
+            'happ_enabled'   => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? 'on' : '',
+            'hwid'           => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['hwid'] ?? '') : '',
+            'happ_ua'        => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['happ_ua'] ?? '') : '',
+            'happ_device_os' => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['happ_device_os'] ?? '') : '',
+            'happ_model'     => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['happ_model'] ?? '') : '',
+            'happ_locale'    => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['happ_locale'] ?? '') : '',
+            'happ_os_ver'    => ($type === 'subscription' && !empty($_POST['happ_enabled'])) ? trim($_POST['happ_os_ver'] ?? '') : '',
         ];
 
         xray_save_group($group);
@@ -134,7 +148,74 @@ $sectionSub->addInput(new Form_Checkbox(
     ($pconfig['autoupdate'] ?? '') === 'on'
 ))->setHelp(gettext('When enabled, the subscription is refreshed via cron every 30 minutes.'));
 
+$sectionSub->addInput(new Form_Checkbox(
+    'happ_enabled',
+    gettext('Happ Headers'),
+    gettext('Send Happ app headers with subscription requests (X-Hwid, User-Agent, etc.)'),
+    ($pconfig['happ_enabled'] ?? '') === 'on'
+))->setHelp(gettext('Enable if your subscription provider uses Happ device authentication.'));
+
 $form->add($sectionSub);
+
+$sectionHapp = new Form_Section(gettext('Happ Subscription Headers'));
+$sectionHapp->setAttribute('id', 'happ-section');
+
+$hwid = htmlspecialchars($pconfig['hwid'] ?? '', ENT_QUOTES, 'UTF-8');
+$sectionHapp->addInput(new Form_StaticText(
+    gettext('HWID'),
+    '<div class="input-group">'
+    . '<input type="text" name="hwid" id="hwid" class="form-control" maxlength="128"'
+    . ' placeholder="' . gettext('e.g. 74jf74nf8f4jr5je') . '"'
+    . ' value="' . $hwid . '">'
+    . '<span class="input-group-btn">'
+    . '<button type="button" id="btn-gen-hwid" class="btn btn-default btn-sm">'
+    . '<i class="fa fa-random icon-embed-btn"></i>' . gettext('Generate') . '</button>'
+    . '</span>'
+    . '</div>'
+    . '<span class="help-block">' . gettext('X-Hwid header sent with subscription requests. Uniquely identifies this device to the server.') . '</span>'
+));
+
+$sectionHapp->addInput(new Form_Input(
+    'happ_ua',
+    gettext('User-Agent'),
+    'text',
+    $pconfig['happ_ua'] ?: 'Happ/3.13.0',
+    ['maxlength' => '128', 'placeholder' => 'Happ/3.13.0']
+))->setHelp(gettext('User-Agent header. Default: Happ/3.13.0'));
+
+$sectionHapp->addInput(new Form_Input(
+    'happ_device_os',
+    gettext('Device OS'),
+    'text',
+    $pconfig['happ_device_os'] ?: 'Android',
+    ['maxlength' => '64', 'placeholder' => 'Android']
+))->setHelp(gettext('X-Device-Os header.'));
+
+$sectionHapp->addInput(new Form_Input(
+    'happ_model',
+    gettext('Device Model'),
+    'text',
+    $pconfig['happ_model'] ?? '',
+    ['maxlength' => '64', 'placeholder' => 'ELP-NX1']
+))->setHelp(gettext('X-Device-Model header. Optional.'));
+
+$sectionHapp->addInput(new Form_Input(
+    'happ_locale',
+    gettext('Locale'),
+    'text',
+    $pconfig['happ_locale'] ?: 'ru',
+    ['maxlength' => '64', 'placeholder' => 'ru']
+))->setHelp(gettext('X-Device-Locale header.'));
+
+$sectionHapp->addInput(new Form_Input(
+    'happ_os_ver',
+    gettext('OS Version'),
+    'text',
+    $pconfig['happ_os_ver'] ?: '15',
+    ['maxlength' => '64', 'placeholder' => '15']
+))->setHelp(gettext('X-Ver-Os header.'));
+
+$form->add($sectionHapp);
 
 print($form);
 ?>
@@ -157,11 +238,31 @@ events.push(function() {
             $('#subscription-section').show();
         } else {
             $('#subscription-section').hide();
+            $('#happ-section').hide();
+        }
+        updateHapp();
+    }
+
+    function updateHapp() {
+        var type = $('#type').val();
+        if (type === 'subscription' && $('#happ_enabled').is(':checked')) {
+            $('#happ-section').show();
+        } else {
+            $('#happ-section').hide();
         }
     }
 
     $('#type').change(updateType);
+    $('#happ_enabled').change(updateHapp);
     updateType();
+
+    $('#btn-gen-hwid').click(function() {
+        var hwid = '';
+        for (var i = 0; i < 16; i++) {
+            hwid += Math.floor(Math.random() * 16).toString(16);
+        }
+        $('#hwid').val(hwid);
+    });
 
     $('#saveform').click(function() {
         $(form).submit();

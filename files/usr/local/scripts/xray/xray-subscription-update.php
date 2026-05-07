@@ -58,13 +58,34 @@ if (empty($subUrls)) {
 
 $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
 
+$hapHeaders = ($group['happ_enabled'] ?? '') === 'on'
+    ? array_intersect_key($group, array_flip([
+        'hwid', 'happ_ua', 'happ_device_os', 'happ_model', 'happ_locale', 'happ_os_ver',
+      ]))
+    : [];
+$curlUa = !empty($hapHeaders['happ_ua']) ? $hapHeaders['happ_ua'] : 'xray-pfsense/1.0';
+$curlHeaderArgs = '';
+foreach ([
+    'hwid'           => 'X-Hwid',
+    'happ_device_os' => 'X-Device-Os',
+    'happ_locale'    => 'X-Device-Locale',
+    'happ_model'     => 'X-Device-Model',
+    'happ_os_ver'    => 'X-Ver-Os',
+] as $key => $header) {
+    if (!empty($hapHeaders[$key])) {
+        $curlHeaderArgs .= ' -H ' . escapeshellarg($header . ': ' . $hapHeaders[$key]);
+    }
+}
+
 $fetchedLinks = [];
 $seenKeys     = [];
 
 foreach ($subUrls as $subUrl) {
     $curlOut = [];
     exec(
-        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
+        $curlBin . ' -s -L --max-time 30'
+        . ' -A ' . escapeshellarg($curlUa)
+        . $curlHeaderArgs
         . ' ' . escapeshellarg($subUrl)
         . ' 2>/dev/null',
         $curlOut,

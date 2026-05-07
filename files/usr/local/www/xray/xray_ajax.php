@@ -291,17 +291,30 @@ switch ($action) {
         echo json_encode(['error' => 'Unknown action: ' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8')]);
 }
 
-function xray_fetch_links_from_url(string $url): array|false
+function xray_fetch_links_from_url(string $url, array $hapHeaders = []): array|false
 {
     $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
-    $rawOut  = [];
-    exec(
-        $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
-        . ' ' . escapeshellarg($url)
-        . ' 2>/dev/null',
-        $rawOut,
-        $curlRc
-    );
+
+    $ua  = !empty($hapHeaders['happ_ua']) ? $hapHeaders['happ_ua'] : 'xray-pfsense/1.0';
+    $cmd = $curlBin . ' -s -L --max-time 30'
+        . ' -A ' . escapeshellarg($ua);
+
+    foreach ([
+        'hwid'           => 'X-Hwid',
+        'happ_device_os' => 'X-Device-Os',
+        'happ_locale'    => 'X-Device-Locale',
+        'happ_model'     => 'X-Device-Model',
+        'happ_os_ver'    => 'X-Ver-Os',
+    ] as $key => $header) {
+        if (!empty($hapHeaders[$key])) {
+            $cmd .= ' -H ' . escapeshellarg($header . ': ' . $hapHeaders[$key]);
+        }
+    }
+
+    $cmd .= ' ' . escapeshellarg($url) . ' 2>/dev/null';
+
+    $rawOut = [];
+    exec($cmd, $rawOut, $curlRc);
 
     if ($curlRc !== 0 || empty($rawOut)) {
         return false;
@@ -334,10 +347,16 @@ function xray_ajax_update_subscription(string $groupUuid): array
         return ['error' => 'Subscription URL is empty'];
     }
 
+    $hapHeaders = ($group['happ_enabled'] ?? '') === 'on'
+        ? array_intersect_key($group, array_flip([
+            'hwid', 'happ_ua', 'happ_device_os', 'happ_model', 'happ_locale', 'happ_os_ver',
+          ]))
+        : [];
+
     $fetchedLinks = [];
     $seenKeys     = [];
     foreach ($urls as $url) {
-        $links = xray_fetch_links_from_url($url);
+        $links = xray_fetch_links_from_url($url, $hapHeaders);
         if ($links === false) {
             return ['error' => 'Failed to fetch subscription URL: ' . $url];
         }
