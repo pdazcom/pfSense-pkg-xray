@@ -59,6 +59,7 @@ $groupConnections = array_values(array_filter(
 ));
 
 if (empty($groupConnections)) {
+    rotation_send_notifications($inst, $groupUuid);
     echo json_encode(['status' => 'no_working_connection', 'error' => 'No connections in group']) . "\n";
     exit(1);
 }
