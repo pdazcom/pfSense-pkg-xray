@@ -109,6 +109,7 @@ if (!empty($instances)):
 						<a class="fa fa-pencil" title="<?=gettext('Edit')?>" href="/xray/xray_edit.php?uuid=<?=urlencode($inst['uuid'] ?? '')?>"></a>
 						<a class="fa fa-play text-success xray-btn-start" title="<?=gettext('Start')?>" href="#" data-uuid="<?=$uuid?>"></a>
 						<a class="fa fa-stop text-warning xray-btn-stop" title="<?=gettext('Stop')?>" href="#" data-uuid="<?=$uuid?>"></a>
+						<a class="fa fa-refresh text-primary xray-btn-restart" title="<?=gettext('Restart')?>" href="#" data-uuid="<?=$uuid?>"></a>
 						<a class="fa fa-bar-chart text-info" title="<?=gettext('Diagnostics')?>" href="/xray/xray_diagnostics.php?uuid=<?=urlencode($inst['uuid'] ?? '')?>"></a>
 						<a class="fa fa-trash text-danger" title="<?=gettext('Delete')?>" href="?act=delete&amp;uuid=<?=$uuid?>" usepost></a>
 					</td>
@@ -195,6 +196,11 @@ events.push(function() {
 	$('.xray-btn-stop').on('click', function(e) {
 		e.preventDefault();
 		instanceAction('stop', $(this).data('uuid'));
+	});
+
+	$('.xray-btn-restart').on('click', function(e) {
+		e.preventDefault();
+		instanceAction('restart', $(this).data('uuid'));
 	});
 
 	refreshStatus();
