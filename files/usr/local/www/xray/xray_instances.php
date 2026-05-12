@@ -198,7 +198,7 @@ events.push(function() {
 				}
 			},
 			complete: function() {
-				if ($btn && busyIcon) {
+				if ($btn) {
 					$btn.attr('class', $btn.data('icon')).css('pointer-events', '');
 				}
 				setTimeout(refreshStatus, 1500);
