@@ -56,7 +56,10 @@ if (empty($subUrls)) {
     exit(1);
 }
 
-$curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+$curlBin   = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+$globalCfg = config_get_path('installedpackages/xray/config/0', []);
+$proxyUrl  = trim($globalCfg['outbound_proxy'] ?? '');
+$proxyArg  = $proxyUrl !== '' ? ' --proxy ' . escapeshellarg($proxyUrl) : '';
 
 $fetchedLinks = [];
 $seenKeys     = [];
@@ -65,6 +68,7 @@ foreach ($subUrls as $subUrl) {
     $curlOut = [];
     exec(
         $curlBin . ' -s -L --max-time 30 -A "xray-pfsense/1.0"'
+        . $proxyArg
         . ' ' . escapeshellarg($subUrl)
         . ' 2>/dev/null',
         $curlOut,
@@ -164,6 +168,9 @@ foreach ($parsedConns as $parsed) {
 
         if ($needsUpdate) {
             foreach ($parsed as $k => $v) {
+                if ($k === 'priority') {
+                    continue;
+                }
                 $groupConns[$matchIdx][$k] = $v;
             }
             $updated++;
@@ -172,8 +179,9 @@ foreach ($parsedConns as $parsed) {
         $usedUuids[] = $matched['uuid'];
     } else {
         $newConn = array_merge($parsed, [
-            'uuid'       => subscription_generate_uuid(),
-            'group_uuid' => $group_uuid,
+            'uuid'        => subscription_generate_uuid(),
+            'group_uuid'  => $group_uuid,
+            'priority'    => 0,
             'test_result' => '',
         ]);
         $groupConns[] = $newConn;
