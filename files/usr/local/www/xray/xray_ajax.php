@@ -296,7 +296,7 @@ function xray_fetch_links_from_url(string $url, array $hapHeaders = []): array|f
     $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
 
     $ua  = !empty($hapHeaders['happ_ua']) ? $hapHeaders['happ_ua'] : 'xray-pfsense/1.0';
-    $cmd = $curlBin . ' -s -L --max-time 30'
+    $cmd = $curlBin . ' -s -L --compressed --max-time 30'
         . ' -A ' . escapeshellarg($ua);
 
     foreach ([

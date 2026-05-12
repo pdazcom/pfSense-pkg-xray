@@ -83,7 +83,7 @@ $seenKeys     = [];
 foreach ($subUrls as $subUrl) {
     $curlOut = [];
     exec(
-        $curlBin . ' -s -L --max-time 30'
+        $curlBin . ' -s -L --compressed --max-time 30'
         . ' -A ' . escapeshellarg($curlUa)
         . $curlHeaderArgs
         . ' ' . escapeshellarg($subUrl)
