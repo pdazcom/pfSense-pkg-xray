@@ -686,6 +686,64 @@ function xray_build_custom_config(
     return json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
+function xray_happ_parse_entry(array $entry): ?array
+{
+    $proxy = null;
+    foreach ($entry['outbounds'] ?? [] as $ob) {
+        if (($ob['tag'] ?? '') === 'proxy') {
+            $proxy = $ob;
+            break;
+        }
+    }
+
+    if ($proxy === null || ($proxy['protocol'] ?? '') !== 'vless') {
+        return null;
+    }
+
+    $vnext = $proxy['settings']['vnext'][0] ?? null;
+    if ($vnext === null) {
+        return null;
+    }
+
+    $user    = $vnext['users'][0] ?? [];
+    $stream  = $proxy['streamSettings'] ?? [];
+    $reality = $stream['realitySettings'] ?? [];
+    $name    = $entry['remarks'] ?? ($vnext['address'] . ':' . $vnext['port']);
+
+    $customConfig = [
+        'log'      => ['loglevel' => 'warning'],
+        'inbounds' => [[
+            'tag'      => 'socks-in',
+            'port'     => 10808,
+            'listen'   => '127.0.0.1',
+            'protocol' => 'socks',
+            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => '127.0.0.1'],
+        ]],
+        'outbounds' => [
+            $proxy,
+            ['tag' => 'direct', 'protocol' => 'freedom'],
+        ],
+        'routing' => $entry['routing'] ?? [
+            'domainStrategy' => 'IPIfNonMatch',
+            'rules'          => [['type' => 'field', 'ip' => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], 'outboundTag' => 'direct']],
+        ],
+    ];
+
+    return [
+        'server_address'      => (string)($vnext['address'] ?? ''),
+        'server_port'         => (string)($vnext['port'] ?? ''),
+        'vless_uuid'          => (string)($user['id'] ?? ''),
+        'flow'                => (string)($user['flow'] ?? ''),
+        'reality_sni'         => (string)($reality['serverName'] ?? ''),
+        'reality_pubkey'      => (string)($reality['publicKey'] ?? ''),
+        'reality_shortid'     => (string)($reality['shortId'] ?? ''),
+        'reality_fingerprint' => (string)($reality['fingerprint'] ?? 'chrome'),
+        'config_mode'         => 'custom',
+        'custom_config'       => json_encode($customConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'name'                => $name,
+    ];
+}
+
 function xray_build_stream_settings(string $type, string $security, array $params): array
 {
     $wireType = ($type === 'raw') ? 'tcp' : $type;

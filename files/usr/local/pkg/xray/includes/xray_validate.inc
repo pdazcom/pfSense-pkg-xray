@@ -68,8 +68,8 @@ function xray_validate_input(array $post, ?string $editUuid): void
     }
 
     $tunIface = trim($post['tun_interface'] ?? '');
-    if (!preg_match('/^[a-z][a-z0-9]{0,13}[0-9]$/', $tunIface)) {
-        $input_errors[] = 'TUN interface name must start with a lowercase letter, end with a digit, and be at most 15 characters (e.g. proxytun0).';
+    if (!preg_match('/^tun[a-z0-9]{0,11}[0-9]$/', $tunIface)) {
+        $input_errors[] = 'TUN interface name must start with "tun", end with a digit, and be at most 15 characters (e.g. tunproxy0).';
     } else {
         xray_validate_tun_unique($tunIface, $editUuid);
     }
@@ -121,6 +121,26 @@ function xray_validate_group(array $post, ?string $editUuid): void
             foreach ($lines as $i => $url) {
                 if (!filter_var($url, FILTER_VALIDATE_URL)) {
                     $input_errors[] = 'URL #' . ($i + 1) . ': "' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" is not a valid URL.';
+                }
+            }
+        }
+
+        if (!empty($post['happ_enabled'])) {
+            $hwid = trim($post['hwid'] ?? '');
+            if ($hwid !== '' && (strlen($hwid) > 128 || !preg_match('/^[!-~]+$/', $hwid))) {
+                $input_errors[] = 'HWID must be printable ASCII without spaces, max 128 characters.';
+            }
+
+            foreach ([
+                'happ_ua'        => ['User-Agent', 128],
+                'happ_device_os' => ['Device OS', 64],
+                'happ_model'     => ['Device Model', 64],
+                'happ_locale'    => ['Locale', 64],
+                'happ_os_ver'    => ['OS Version', 64],
+            ] as $field => [$label, $maxLen]) {
+                $val = trim($post[$field] ?? '');
+                if ($val !== '' && (strlen($val) > $maxLen || !preg_match('/^[\x20-\x7E]+$/', $val))) {
+                    $input_errors[] = $label . ' must be printable ASCII, max ' . $maxLen . ' characters.';
                 }
             }
         }

@@ -19,7 +19,7 @@ Ported from [os-xray](https://github.com/MrTheory/os-xray) (OPNsense plugin). Al
 xray-core  (VLESS+Reality outbound)
     ↓  SOCKS5  (127.0.0.1:10808, configurable)
 hev-socks5-tunnel  (amd64)  /  tun2socks  (aarch64 fallback)
-    ↓  TUN interface  (e.g. proxytun0)
+    ↓  TUN interface  (e.g. tunproxy0)
 pfSense Gateway  →  Firewall Rules  →  Selective routing
 ```
 
@@ -33,7 +33,7 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 
 - **Multi-instance** — run several independent VPN tunnels simultaneously, each with its own UUID, TUN interface, SOCKS5 port, and config
 - **Connection groups** — organize connections into manual or subscription-based groups; each instance binds to a group
-- **Subscription support** — fetch `vless://` links from a URL, auto-parse and sync connections (add / update / remove); auto-update every 30 minutes via cron
+- **Subscription support** — fetch `vless://` links from a URL, auto-parse and sync connections (add / update / remove); auto-update every 30 minutes via cron; optional Happ device headers (X-Hwid, User-Agent, X-Device-Os, etc.) for providers that require device authentication
 - **Connection rotation** — on start or watchdog trigger, URL-tests all connections in the group and activates the first working one
 - **URL test** — per-connection reachability test via a temporary xray-core SOCKS5 instance; stores ping RTT result in the GUI
 - **Wizard mode** — VLESS+Reality fields in the GUI (UUID, SNI, PublicKey, ShortID, Fingerprint, flow)
@@ -155,7 +155,10 @@ Connections are organized into groups. There is always a **Default** group for m
 
 1. **Add Group** → set type to **Subscription**, enter the subscription URL
 2. Optionally enable **Auto-update** (updates every 30 minutes via cron)
-3. **Save** → **Update Now** to fetch and sync connections immediately
+3. Optionally enable **Happ Headers** — if your provider uses Happ device authentication:
+   - Enter an **HWID** manually or click **Generate** to create a random one
+   - Adjust **User-Agent**, **Device OS**, **Locale**, **OS Version** as needed
+4. **Save** → **Update Now** to fetch and sync connections immediately
 
 After updating, the connections list shows a ping result badge for each entry (run **URL Test** to populate it).
 
@@ -166,7 +169,7 @@ After updating, the connections list shows a ping result badge for each entry (r
 **VPN → Xray → Instances → Add Instance**
 
 1. Select a **Connection Group** — the instance will use connections from this group
-2. Set **TUN Interface** name (e.g. `proxytun0`) — must be unique per instance
+2. Set **TUN Interface** name (e.g. `tunproxy0`) — must be unique per instance
 3. Set **SOCKS5 Port** — must be unique per instance (default: `10808`)
 4. **Save** → **Start**
 
@@ -365,7 +368,7 @@ cat /usr/local/tun2socks/backend.txt
 ps aux | grep -E 'hev-socks5|tun2socks'
 
 # Check interface
-ifconfig proxytun0
+ifconfig tunproxy0
 ```
 
 **Gateway is marked down**
