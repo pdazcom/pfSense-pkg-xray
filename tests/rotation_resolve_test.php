@@ -66,6 +66,7 @@ function xray_resolve_connection_for_instance(array $inst): ?array
         xray_get_connections_by_group($groupUuid),
         fn($c) => ($c['enabled'] ?? 'on') === 'on'
     ));
+    usort($groupConns, fn($a, $b) => (int)($b['priority'] ?? 0) <=> (int)($a['priority'] ?? 0));
     return $groupConns[0] ?? null;
 }
 
@@ -215,7 +216,18 @@ $STUB_CONNECTIONS = [
 ];
 
 $result = xray_resolve_connection_for_instance(inst_rotation('g1', activeUuid: ''));
-assert_equals('c1', $result['uuid'] ?? null, 'returns first enabled connection when no active set');
+assert_equals('c1', $result['uuid'] ?? null, 'returns first enabled connection when no active set (equal priority)');
+
+section('Rotation — no active, fallback respects priority');
+
+$STUB_CONNECTIONS = [
+    conn('c1', 'g1', enabled: true, priority: 2),
+    conn('c2', 'g1', enabled: true, priority: 10),
+    conn('c3', 'g1', enabled: false, priority: 99),
+];
+
+$result = xray_resolve_connection_for_instance(inst_rotation('g1', activeUuid: ''));
+assert_equals('c2', $result['uuid'] ?? null, 'fallback returns highest-priority enabled connection');
 
 // ─── Rotation: ALL connections disabled ─────────────────────────────────────
 

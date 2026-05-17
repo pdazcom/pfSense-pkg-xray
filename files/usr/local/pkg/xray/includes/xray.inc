@@ -404,8 +404,12 @@ function xray_get_connection_for_instance(array $inst): ?array
         return null;
     }
 
-    $connections = xray_get_connections_by_group($groupUuid);
-    return !empty($connections) ? $connections[0] : null;
+    $connections = array_values(array_filter(
+        xray_get_connections_by_group($groupUuid),
+        fn($c) => ($c['enabled'] ?? 'on') === 'on'
+    ));
+    usort($connections, fn($a, $b) => (int)($b['priority'] ?? 0) <=> (int)($a['priority'] ?? 0));
+    return $connections[0] ?? null;
 }
 
 // ─── Migration: old instances → connections ───────────────────────────────────

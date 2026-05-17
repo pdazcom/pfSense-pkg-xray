@@ -109,6 +109,7 @@ function xray_resolve_connection_for_instance(array $inst): ?array
         xray_get_connections_by_group($groupUuid),
         fn($c) => ($c['enabled'] ?? 'on') === 'on'
     ));
+    usort($groupConns, fn($a, $b) => (int)($b['priority'] ?? 0) <=> (int)($a['priority'] ?? 0));
     return $groupConns[0] ?? null;
 }
 
