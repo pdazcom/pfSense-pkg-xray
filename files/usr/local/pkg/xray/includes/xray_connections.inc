@@ -140,11 +140,12 @@ function xray_update_subscription_group(array $group): array
         }
 
         $decoded = base64_decode(trim($raw), true);
-        if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
+        if ($decoded !== false && strpos($decoded, '://') !== false) {
             $raw = $decoded;
         }
         foreach (array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw))) as $line) {
-            if (strpos($line, 'vless://') !== 0) {
+            $scheme = strtolower(substr($line, 0, strpos($line . ':', ':')));
+            if (!in_array($scheme, ['vless', 'vmess', 'trojan', 'ss'], true)) {
                 continue;
             }
             $key = md5($line);
@@ -156,18 +157,16 @@ function xray_update_subscription_group(array $group): array
                 continue;
             }
             $seenKeys[$key] = true;
+            $addr = $data['server_address'] ?? ($data['host'] ?? '');
+            $port = isset($data['server_port']) ? (string)$data['server_port'] : (string)($data['port'] ?? '');
             $parsedConns[]  = [
-                'server_address'      => $data['host'],
-                'server_port'         => (string)$data['port'],
-                'vless_uuid'          => $data['vless_uuid'],
-                'flow'                => $data['flow'],
-                'reality_sni'         => $data['sni'],
-                'reality_pubkey'      => $data['pbk'],
-                'reality_shortid'     => $data['sid'],
-                'reality_fingerprint' => $data['fp'],
-                'config_mode'         => $data['config_mode'],
-                'custom_config'       => $data['custom_config'] ?? '',
-                'name'                => $data['name'] !== '' ? $data['name'] : ($data['host'] . ':' . $data['port']),
+                'server_address' => $addr,
+                'server_port'    => $port,
+                'vless_uuid'     => $data['vless_uuid'] ?? '',
+                'flow'           => $data['flow'] ?? '',
+                'config_mode'    => 'custom',
+                'custom_config'  => $data['custom_config'] ?? '',
+                'name'           => ($data['name'] ?? '') !== '' ? $data['name'] : ($addr . ':' . $port),
             ];
         }
     }
@@ -175,7 +174,7 @@ function xray_update_subscription_group(array $group): array
     if (empty($parsedConns)) {
         return ['error' => $isHappMode
             ? 'No valid entries found in Happ subscription'
-            : 'No vless:// links found in subscription'];
+            : 'No valid proxy links found in subscription'];
     }
 
     $groupConns = [];
