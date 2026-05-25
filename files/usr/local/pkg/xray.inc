@@ -209,6 +209,7 @@ EOT;
     file_put_contents('/etc/newsyslog.conf.d/xray.conf', $newsyslog . "\n");
 
     mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local xray_enable=YES');
+    mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local kld_list+=if_tun');
 
     install_cron_job(
         '/usr/local/bin/php /usr/local/scripts/xray/xray-watchdog.php',
@@ -238,6 +239,7 @@ function xray_deinstall(): void
     @unlink('/etc/newsyslog.conf.d/xray.conf');
 
     mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local xray_enable=NO');
+    mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local kld_list-=if_tun');
 
     install_cron_job(
         '/usr/local/bin/php /usr/local/scripts/xray/xray-watchdog.php',
