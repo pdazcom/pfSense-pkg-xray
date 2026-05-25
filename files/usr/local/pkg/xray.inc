@@ -210,6 +210,12 @@ EOT;
 
     mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local xray_enable=YES');
 
+    $kldList = trim(shell_exec('/usr/sbin/sysrc -n -f /etc/rc.conf.local kld_list 2>/dev/null') ?? '');
+    if (!in_array('if_tun', preg_split('/\s+/', $kldList), true)) {
+        mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local kld_list+=if_tun');
+        @file_put_contents('/var/db/xray_kld_if_tun_added', '1');
+    }
+
     install_cron_job(
         '/usr/local/bin/php /usr/local/scripts/xray/xray-watchdog.php',
         true,
@@ -238,6 +244,11 @@ function xray_deinstall(): void
     @unlink('/etc/newsyslog.conf.d/xray.conf');
 
     mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local xray_enable=NO');
+
+    if (file_exists('/var/db/xray_kld_if_tun_added')) {
+        mwexec('/usr/sbin/sysrc -f /etc/rc.conf.local kld_list-=if_tun');
+        @unlink('/var/db/xray_kld_if_tun_added');
+    }
 
     install_cron_job(
         '/usr/local/bin/php /usr/local/scripts/xray/xray-watchdog.php',
