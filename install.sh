@@ -87,14 +87,16 @@ fi
 # won't be present next to it.  Download and unpack the repository archive so
 # cmd_deploy_files has something to copy from.
 GITHUB_REPO="pdazcom/pfSense-pkg-xray"
-GITHUB_BRANCH="main"
 
 if [ ! -d "${REPO_ROOT}/files" ]; then
-    ARCHIVE_URL="https://github.com/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
+    LATEST_TAG=$(fetch -q -o - "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    [ -z "${LATEST_TAG}" ] && die "Failed to determine latest release tag from GitHub"
+
+    ARCHIVE_URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${LATEST_TAG}.tar.gz"
     ARCHIVE_TMP="/tmp/pfsense-pkg-xray-src-$$.tar.gz"
     EXTRACT_DIR="/tmp/pfsense-pkg-xray-src-$$"
 
-    info "Package source not found locally — downloading from GitHub..."
+    info "Package source not found locally — downloading ${LATEST_TAG} from GitHub..."
     fetch -q -o "${ARCHIVE_TMP}" "${ARCHIVE_URL}" || die "Failed to download package source from GitHub"
 
     mkdir -p "${EXTRACT_DIR}"

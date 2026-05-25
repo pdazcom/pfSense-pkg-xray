@@ -129,7 +129,8 @@ function xray_update_subscription_group(array $group): array
                     if ($conn === null) {
                         continue;
                     }
-                    $key = md5($conn['server_address'] . ':' . $conn['server_port'] . ':' . $conn['vless_uuid']);
+                    $conn['conn_identity'] = xray_connection_identity($conn);
+                    $key = $conn['conn_identity'];
                     if (!isset($seenKeys[$key])) {
                         $seenKeys[$key] = true;
                         $parsedConns[]  = $conn;
@@ -140,11 +141,12 @@ function xray_update_subscription_group(array $group): array
         }
 
         $decoded = base64_decode(trim($raw), true);
-        if ($decoded !== false && strpos($decoded, 'vless://') !== false) {
+        if ($decoded !== false && strpos($decoded, '://') !== false) {
             $raw = $decoded;
         }
         foreach (array_filter(array_map('trim', preg_split('/[\r\n]+/', $raw))) as $line) {
-            if (strpos($line, 'vless://') !== 0) {
+            $scheme = strtolower(substr($line, 0, strpos($line . ':', ':')));
+            if (!in_array($scheme, ['vless', 'vmess', 'trojan', 'ss'], true)) {
                 continue;
             }
             $key = md5($line);
@@ -156,18 +158,16 @@ function xray_update_subscription_group(array $group): array
                 continue;
             }
             $seenKeys[$key] = true;
+            $addr     = $data['server_address'] ?? ($data['host'] ?? '');
+            $port     = isset($data['server_port']) ? (string)$data['server_port'] : (string)($data['port'] ?? '');
+            $identity = xray_connection_identity($data);
             $parsedConns[]  = [
-                'server_address'      => $data['host'],
-                'server_port'         => (string)$data['port'],
-                'vless_uuid'          => $data['vless_uuid'],
-                'flow'                => $data['flow'],
-                'reality_sni'         => $data['sni'],
-                'reality_pubkey'      => $data['pbk'],
-                'reality_shortid'     => $data['sid'],
-                'reality_fingerprint' => $data['fp'],
-                'config_mode'         => $data['config_mode'],
-                'custom_config'       => $data['custom_config'] ?? '',
-                'name'                => $data['name'] !== '' ? $data['name'] : ($data['host'] . ':' . $data['port']),
+                'server_address'  => $addr,
+                'server_port'     => $port,
+                'conn_identity'   => $identity,
+                'config_mode'     => 'custom',
+                'custom_config'   => $data['custom_config'] ?? '',
+                'name'            => ($data['name'] ?? '') !== '' ? $data['name'] : ($addr . ':' . $port),
             ];
         }
     }
@@ -175,7 +175,7 @@ function xray_update_subscription_group(array $group): array
     if (empty($parsedConns)) {
         return ['error' => $isHappMode
             ? 'No valid entries found in Happ subscription'
-            : 'No vless:// links found in subscription'];
+            : 'No valid proxy links found in subscription'];
     }
 
     $groupConns = [];
@@ -197,11 +197,9 @@ function xray_update_subscription_group(array $group): array
         $matched  = null;
         $matchIdx = null;
         foreach ($groupConns as $idx => $existing) {
-            if (
-                ($existing['server_address'] ?? '') === $parsed['server_address']
-                && ($existing['server_port'] ?? '') === $parsed['server_port']
-                && ($existing['vless_uuid'] ?? '') === $parsed['vless_uuid']
-            ) {
+            $existingIdentity = ($existing['conn_identity'] ?? '')
+                ?: xray_connection_identity($existing);
+            if ($existingIdentity === $parsed['conn_identity']) {
                 $matched  = $existing;
                 $matchIdx = $idx;
                 break;
@@ -209,14 +207,7 @@ function xray_update_subscription_group(array $group): array
         }
 
         if ($matched !== null) {
-            $needsUpdate = false;
-            foreach (['flow', 'reality_sni', 'reality_pubkey', 'reality_shortid', 'reality_fingerprint', 'config_mode', 'custom_config'] as $field) {
-                if (($matched[$field] ?? '') !== ($parsed[$field] ?? '')) {
-                    $needsUpdate = true;
-                    break;
-                }
-            }
-            if ($needsUpdate) {
+            if (($matched['custom_config'] ?? '') !== $parsed['custom_config']) {
                 foreach ($parsed as $k => $v) {
                     $groupConns[$matchIdx][$k] = $v;
                 }
@@ -280,4 +271,44 @@ function xray_save_connection(array $connection): void
     }
 
     xray_save_connections($connections);
+}
+
+/**
+ * Derive a stable identity hash for a connection used to match existing
+ * records during subscription sync. Works across all protocols:
+ * - vless/vmess: address + port + uuid
+ * - trojan:      address + port + password (extracted from custom_config)
+ * - shadowsocks: address + port + method + password (from custom_config)
+ * Falls back to address + port + vless_uuid for records without custom_config.
+ */
+function xray_connection_identity(array $conn): string
+{
+    $addr = $conn['server_address'] ?? ($conn['host'] ?? '');
+    $port = (string)($conn['server_port'] ?? ($conn['port'] ?? ''));
+
+    $cfg = json_decode($conn['custom_config'] ?? '', true);
+    if (is_array($cfg)) {
+        $ob       = $cfg['outbounds'][0] ?? [];
+        $protocol = $ob['protocol']      ?? '';
+        $settings = $ob['settings']      ?? [];
+
+        switch ($protocol) {
+            case 'vless':
+            case 'vmess':
+                $uuid = $ob['settings']['vnext'][0]['users'][0]['id'] ?? '';
+                return md5($addr . ':' . $port . ':' . $uuid);
+
+            case 'trojan':
+                $password = $settings['servers'][0]['password'] ?? '';
+                return md5($addr . ':' . $port . ':trojan:' . $password);
+
+            case 'shadowsocks':
+                $method   = $settings['servers'][0]['method']   ?? '';
+                $password = $settings['servers'][0]['password'] ?? '';
+                return md5($addr . ':' . $port . ':ss:' . $method . ':' . $password);
+        }
+    }
+
+    $uuid = $conn['vless_uuid'] ?? '';
+    return md5($addr . ':' . $port . ':' . $uuid);
 }
