@@ -26,6 +26,25 @@ $uuid = xray_sanitize_uuid(trim($_POST['uuid'] ?? $_GET['uuid'] ?? ''));
 // ─── Dispatcher ───────────────────────────────────────────────────────────────
 switch ($action) {
 
+case 'clone_group':
+    $uuid = xray_sanitize_uuid($_POST['uuid'] ?? '');
+    $name = trim($_POST['name'] ?? '');
+    
+    if ($uuid === '' || $name === '') {
+        echo json_encode(['error' => 'Invalid parameters']);
+        exit;
+    }
+    
+    require_once('xray/includes/xray_connections.inc');
+    $newGroup = xray_clone_group($uuid, $name);
+    
+    if ($newGroup === null) {
+        echo json_encode(['error' => 'Failed to clone group']);
+    } else {
+        echo json_encode(['status' => 'ok', 'new_uuid' => $newGroup['uuid']]);
+    }
+    exit;
+
     case 'statusall':
         $out = [];
         exec('/usr/local/bin/php /usr/local/scripts/xray/xray-service-control.php statusall 2>/dev/null', $out);

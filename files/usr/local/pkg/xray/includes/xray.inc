@@ -11,6 +11,7 @@ require_once('config.inc');
 require_once('interfaces.inc');
 require_once('filter.inc');
 require_once('util.inc');
+require_once('xray/includes/xray_gateway.inc');
 
 define('XRAY_DEFAULT_GROUP_UUID', '00000000-0000-4000-8000-000000000001');
 
@@ -538,6 +539,17 @@ function xray_register_tun_interface(string $ifname, string $uuid): void
         'subnet'  => '30',
         'spoofmac'=> '',
     ];
+    
+    // Register as gateway with TCP health monitoring
+    try {
+        $inst = xray_get_instance_by_uuid($uuid);
+        if ($inst !== null) {
+            $gatewayName = 'XRAY_' . substr(strtoupper($uuid), 0, 8);
+            xray_register_gateway($ifname, $uuid, $gatewayName);
+        }
+    } catch (Exception $e) {
+        error_log('Xray: Failed to register gateway for ' . $ifname . ': ' . $e->getMessage());
+    }
 }
 
 function xray_unregister_tun_interface(string $ifname): void
@@ -548,9 +560,53 @@ function xray_unregister_tun_interface(string $ifname): void
         if (($iface['if'] ?? '') === $ifname) {
             unset($config['interfaces'][$key]);
             write_config('Xray: unregister TUN interface ' . $ifname);
+            
+            // Also unregister the gateway
+            $instances = xray_get_instances();
+            foreach ($instances as $inst) {
+                if (($inst['tun_interface'] ?? '') === $ifname) {
+                    $gatewayName = 'XRAY_' . substr(strtoupper($inst['uuid']), 0, 8);
+                    xray_unregister_gateway($gatewayName);
+                    break;
+                }
+            }
+            
             return;
         }
     }
+}
+
+/**
+ * Get complete gateway status for a Xray instance
+ */
+function xray_get_instance_gateway_status(string $uuid): ?array
+{
+    $inst = xray_get_instance_by_uuid($uuid);
+    if ($inst === null) {
+        return null;
+    }
+    
+    $gw = xray_get_gateway_by_uuid($uuid);
+    if ($gw === null) {
+        return null;
+    }
+    
+    $health = xray_gateway_health_check($uuid);
+    
+    return [
+        'instance' => [
+            'uuid' => $uuid,
+            'name' => $inst['name'],
+            'tun_interface' => $inst['tun_interface'],
+        ],
+        'gateway' => [
+            'name' => $gw['name'],
+            'ip' => $gw['gateway'],
+            'interface' => $gw['interface'],
+        ],
+        'health' => $health,
+        'is_up' => ($health['status'] === 'up'),
+    ];
 }
 
 function xray_unregister_tun_interface_by_uuid(string $uuid): void
@@ -563,6 +619,11 @@ function xray_unregister_tun_interface_by_uuid(string $uuid): void
     if ($ifname !== '') {
         xray_unregister_tun_interface($ifname);
     }
+    
+    // ⚠️ ВНИМАНИЕ: Только если вы УДАЛИЛИ этот код из xray_unregister_tun_interface()!
+    // Но это плохой подход - дублирование кода
+    //$gatewayName = 'XRAY_' . substr(strtoupper($uuid), 0, 8);
+    //xray_unregister_gateway($gatewayName);
 }
 
 // ─── Resync ───────────────────────────────────────────────────────────────────
@@ -762,6 +823,86 @@ function xray_deinstall(): void
     unset($config['installedpackages']['xrayinstances']);
     unset($config['installedpackages']['xraygroups']);
     unset($config['installedpackages']['xrayconnections']);
+}
+
+/**
+ * Get groups sorted by order field
+ */
+function xray_get_groups_sorted(): array
+{
+    $groups = xray_get_groups();
+    
+    // Sort by order field, then by UUID
+    usort($groups, function($a, $b) {
+        $orderA = (int)($a['order'] ?? 999);
+        $orderB = (int)($b['order'] ?? 999);
+        
+        if ($orderA === $orderB) {
+            return strcmp($a['uuid'], $b['uuid']);
+        }
+        return $orderA <=> $orderB;
+    });
+    
+    return $groups;
+}
+
+/**
+ * Update group order
+ */
+function xray_reorder_groups(array $orderedUuids): void
+{
+    global $config;
+    
+    $groups = xray_get_groups();
+    $groupMap = [];
+    
+    foreach ($groups as $g) {
+        $groupMap[$g['uuid']] = $g;
+    }
+    
+    foreach ($orderedUuids as $order => $uuid) {
+        if (isset($groupMap[$uuid])) {
+            $groupMap[$uuid]['order'] = $order;
+        }
+    }
+    
+    $updatedGroups = array_values($groupMap);
+    
+    if (!isset($config['installedpackages']['xray'])) {
+        $config['installedpackages']['xray'] = [];
+    }
+    
+    $config['installedpackages']['xray']['groups'] = $updatedGroups;
+    write_config('Xray: reorder groups');
+}
+
+/**
+ * Clone a group with all its connections
+ */
+function xray_clone_group(string $sourceUuid, string $newName): ?array
+{
+    $sourceGroup = xray_get_group_by_uuid($sourceUuid);
+    if ($sourceGroup === null) {
+        return null;
+    }
+    
+    // Create new group
+    $newGroup = $sourceGroup;
+    $newGroup['uuid'] = xray_generate_uuid();
+    $newGroup['name'] = $newName;
+    
+    xray_save_group($newGroup);
+    
+    // Clone all connections
+    $sourceConns = xray_get_connections_by_group($sourceUuid);
+    foreach ($sourceConns as $conn) {
+        $newConn = $conn;
+        $newConn['uuid'] = xray_generate_connection_uuid();
+        $newConn['group_uuid'] = $newGroup['uuid'];
+        xray_save_connection($newConn);
+    }
+    
+    return $newGroup;
 }
 
 function xray_unregister_menu(): void
