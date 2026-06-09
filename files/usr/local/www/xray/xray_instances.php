@@ -86,6 +86,7 @@ display_top_tabs($tab_array);
 					<th><?=gettext('TUN Interface')?></th>
 					<th><?=gettext('SOCKS5')?></th>
 					<th><?=gettext('Status')?></th>
+					<th><?=gettext('Gateway Health')?></th>
 					<th><?=gettext('Actions')?></th>
 				</tr>
 			</thead>
@@ -102,6 +103,11 @@ if (!empty($instances)):
 					<td><?=htmlspecialchars($inst['socks5_listen'] ?? '', ENT_QUOTES, 'UTF-8')?>:<?=(int)($inst['socks5_port'] ?? 10808)?></td>
 					<td>
 						<span class="xray-status" data-uuid="<?=$uuid?>">
+							<i class="fa fa-spinner fa-spin text-muted"></i>
+						</span>
+					</td>
+					<td>
+						<span class="xray-gateway-health" data-uuid="<?=$uuid?>" title="TCP health check to 1.1.1.1:443">
 							<i class="fa fa-spinner fa-spin text-muted"></i>
 						</span>
 					</td>
@@ -170,6 +176,47 @@ events.push(function() {
 		});
 	}
 
+function renderGatewayHealth(data) {
+    if (!data) {
+        return '<span class="text-muted" title="Unknown"><i class="fa fa-question-circle"></i></span>';
+    }
+    
+    var health = data.health || {};
+    if (health.status === 'up') {
+        var latency = health.latency_ms || '?';
+        return '<span class="text-success" title="Gateway is UP">' +
+               '<i class="fa fa-link"></i> ' + latency + 'ms</span>';
+    } else {
+        var error = health.error || 'Gateway DOWN';
+        return '<span class="text-danger" title="' + error + '">' +
+               '<i class="fa fa-chain-broken"></i> DOWN</span>';
+    }
+}
+
+function refreshGatewayHealth() {
+    $.ajax({
+        url: '/xray/xray_gateway_status.php?action=all',
+        type: 'get',
+        dataType: 'json',
+        timeout: 10000,
+        success: function(data) {
+            if (!data.gateways) return;
+            
+            $.each(data.gateways, function(uuid, gatewayData) {
+                var $elem = $('.xray-gateway-health[data-uuid="' + uuid + '"]');
+                if ($elem.length) {
+                    $elem.html(renderGatewayHealth(gatewayData));
+                }
+            });
+        },
+        error: function() {
+            $('.xray-gateway-health').html(
+                '<span class="text-muted" title="Error"><i class="fa fa-exclamation-triangle"></i></span>'
+            );
+        }
+    });
+}
+
 	function instanceAction(action, uuid) {
 		$.ajax({
 			url: '/xray/xray_ajax.php',
@@ -199,6 +246,10 @@ events.push(function() {
 
 	refreshStatus();
 	setInterval(refreshStatus, 10000);
+	
+	// Gateway health monitoring
+	refreshGatewayHealth();
+	setInterval(refreshGatewayHealth, 10000);
 });
 //]]>
 </script>
