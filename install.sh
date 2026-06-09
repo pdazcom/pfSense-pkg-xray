@@ -86,7 +86,7 @@ fi
 # When the script is fetched directly (not from a git clone), the files/ tree
 # won't be present next to it.  Download and unpack the repository archive so
 # cmd_deploy_files has something to copy from.
-GITHUB_REPO="pdazcom/pfSense-pkg-xray"
+GITHUB_REPO="dancebunny98/pfSense-pkg-xray"
 
 if [ ! -d "${REPO_ROOT}/files" ]; then
     LATEST_TAG=$(fetch -q -o - "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
