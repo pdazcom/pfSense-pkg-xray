@@ -102,6 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
                     'name'          => $postName,
                     'custom_config' => $postJson,
                     'priority'      => $postPriority,
+                    'enabled'       => $isNew ? 'on' : ($existing['enabled'] ?? 'on'),
                     'test_result'   => $isNew ? '' : ($existing['test_result'] ?? ''),
                 ];
 

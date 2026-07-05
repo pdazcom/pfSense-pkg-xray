@@ -197,6 +197,19 @@ function xray_get_all_instances(): array
     return $result;
 }
 
+function xray_get_all_instance_uuids(): array
+{
+    $instancesCfg = config_get_path('installedpackages/xrayinstances/config', []);
+    $uuids = [];
+    foreach ($instancesCfg as $inst) {
+        $inst_uuid = $inst['uuid'] ?? '';
+        if ($inst_uuid !== '') {
+            $uuids[] = $inst_uuid;
+        }
+    }
+    return $uuids;
+}
+
 function xray_get_config(string $inst_uuid = ''): array
 {
     $all = xray_get_all_instances();
@@ -867,7 +880,7 @@ switch ($action) {
         if ($inst_uuid !== '') {
             do_stop($inst_uuid);
         } else {
-            foreach (array_keys(xray_get_all_instances()) as $uuid) {
+            foreach (xray_get_all_instance_uuids() as $uuid) {
                 do_stop($uuid);
             }
         }
@@ -884,12 +897,12 @@ switch ($action) {
                 do_start($c);
             }
         } else {
-            $all = xray_get_all_instances();
-            foreach ($all as $uuid => $c) {
-                do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
+            $allUuids = xray_get_all_instance_uuids();
+            foreach ($allUuids as $uuid) {
+                do_stop($uuid);
             }
             sleep(1);
-            foreach (array_keys($all) as $uuid) {
+            foreach ($allUuids as $uuid) {
                 $c = xray_get_config($uuid);
                 if (!empty($c) && $c['enabled']) {
                     do_start($c);
@@ -919,10 +932,9 @@ switch ($action) {
                 exit(0);
             }
         }
-        $all       = xray_get_all_instances();
-        $allUuids  = array_keys($all);
-        foreach ($all as $uuid => $c) {
-            do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
+        $allUuids  = xray_get_all_instance_uuids();
+        foreach ($allUuids as $uuid) {
+            do_stop($uuid);
         }
         sleep(1);
         $anyFailed = false;
