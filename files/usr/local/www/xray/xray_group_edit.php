@@ -41,9 +41,7 @@ if (!$isNew) {
     $existing = xray_get_group_by_uuid($editUuid);
     if ($existing !== null) {
         $pconfig = array_merge($defaults, $existing);
-        if (!isset($existing['sub_urls']) || $existing['sub_urls'] === '') {
-            $pconfig['sub_urls'] = implode("\n", xray_group_sub_urls($existing));
-        }
+        $pconfig['sub_urls'] = implode("\n", xray_group_sub_urls($existing));
     } else {
         $pconfig = $defaults;
     }

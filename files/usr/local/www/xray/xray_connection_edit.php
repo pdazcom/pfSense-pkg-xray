@@ -35,8 +35,9 @@ if (!$isNew) {
     }
 }
 
-$connName    = $existing['name']       ?? '';
-$connGroup   = $existing['group_uuid'] ?? ($presetGroupUuid !== '' ? $presetGroupUuid : XRAY_DEFAULT_GROUP_UUID);
+$connName     = $existing['name']       ?? '';
+$connGroup    = $existing['group_uuid'] ?? ($presetGroupUuid !== '' ? $presetGroupUuid : XRAY_DEFAULT_GROUP_UUID);
+$connPriority = (int)($existing['priority'] ?? 0);
 
 $input_errors = [];
 
@@ -78,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
             $postName      = trim($_POST['name'] ?? '');
             $postGroupUuid = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? ''));
             $postJson      = trim($_POST['custom_config'] ?? '');
+            $postPriority  = max(0, min(100, (int)($_POST['priority'] ?? 0)));
 
             if ($postName === '') {
                 $input_errors[] = gettext('Name is required.');
@@ -99,6 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
                     'group_uuid'    => $postGroupUuid ?: XRAY_DEFAULT_GROUP_UUID,
                     'name'          => $postName,
                     'custom_config' => $postJson,
+                    'priority'      => $postPriority,
+                    'enabled'       => $isNew ? 'on' : ($existing['enabled'] ?? 'on'),
                     'test_result'   => $isNew ? '' : ($existing['test_result'] ?? ''),
                 ];
 
@@ -109,9 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
                 exit;
             }
 
-            $connName    = trim($_POST['name'] ?? '');
-            $connGroup   = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? '')) ?: XRAY_DEFAULT_GROUP_UUID;
-            $storedJson  = trim($_POST['custom_config'] ?? '');
+            $connName     = trim($_POST['name'] ?? '');
+            $connGroup    = xray_sanitize_uuid(trim($_POST['group_uuid'] ?? '')) ?: XRAY_DEFAULT_GROUP_UUID;
+            $connPriority = max(0, min(100, (int)($_POST['priority'] ?? 0)));
+            $storedJson   = trim($_POST['custom_config'] ?? '');
             break;
     }
 }
@@ -200,6 +205,14 @@ $sectionCommon->addInput(new Form_Select(
     $connGroup,
     $groupOptions
 ));
+
+$sectionCommon->addInput(new Form_Input(
+    'priority',
+    gettext('Priority'),
+    'number',
+    (string)$connPriority,
+    ['min' => '0', 'max' => '100', 'style' => 'width:80px']
+))->setHelp(gettext('Higher priority connections are preferred in rotation mode (0–100, default 0).'));
 
 $form->add($sectionCommon);
 

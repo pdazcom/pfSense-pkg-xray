@@ -31,11 +31,16 @@ if ($_POST && isset($_POST['act']) && $_POST['act'] === 'save') {
 	if ($notifHook !== '' && !filter_var($notifHook, FILTER_VALIDATE_URL)) {
 		$notifHook = '';
 	}
+	$outboundProxy = trim($_POST['outbound_proxy'] ?? '');
+	if ($outboundProxy !== '' && !filter_var($outboundProxy, FILTER_VALIDATE_URL)) {
+		$outboundProxy = '';
+	}
 	$pconfig = [
 		'enabled'               => !empty($_POST['enabled'])          ? 'on' : '',
 		'watchdog_enabled'      => !empty($_POST['watchdog_enabled']) ? 'on' : '',
 		'test_url'              => $testUrl,
 		'notification_webhook'  => $notifHook,
+		'outbound_proxy'        => $outboundProxy,
 	];
 	xray_save_global_config($pconfig);
 	xray_resync();
@@ -88,6 +93,14 @@ $section->addInput(new Form_Input(
 	$pconfig['notification_webhook'] ?? '',
 	['placeholder' => 'https://hooks.example.com/...']
 ))->setHelp(gettext('Optional. HTTP POST called when rotation finds no working connection. Leave empty to disable.'));
+
+$section->addInput(new Form_Input(
+	'outbound_proxy',
+	gettext('Outbound Proxy'),
+	'text',
+	$pconfig['outbound_proxy'] ?? '',
+	['placeholder' => 'socks5h://127.0.0.1:1080']
+))->setHelp(gettext('Optional. Proxy used for subscription updates and URL tests. Supports socks5h://, socks5://, http://. Leave empty to use direct connection.'));
 
 $form->add($section);
 

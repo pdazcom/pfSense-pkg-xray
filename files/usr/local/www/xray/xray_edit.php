@@ -99,19 +99,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
 $allConnections = xray_get_connections();
 $allGroups      = xray_get_groups();
 
-$connectionOptions = [];
+$connectionsByGroup = [];
 foreach ($allConnections as $conn) {
-    $groupName = '';
-    foreach ($allGroups as $g) {
-        if ($g['uuid'] === $conn['group_uuid']) {
-            $groupName = $g['name'];
-            break;
-        }
-    }
-    $serverLabel = xray_connection_server_label($conn);
-    $label = ($groupName !== '' ? $groupName . ' / ' : '') . ($conn['name'] ?? '')
-        . ($serverLabel !== '' ? ' (' . $serverLabel . ')' : '');
-    $connectionOptions[$conn['uuid']] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+    $gUuid = $conn['group_uuid'] ?? '';
+    $connectionsByGroup[$gUuid][] = $conn;
 }
 
 $groupOptions = [];
@@ -159,13 +150,30 @@ $form->add($sectionCommon);
 $sectionFixed = new Form_Section(gettext('Fixed Connection'));
 $sectionFixed->setAttribute('id', 'fixed-section');
 
-if (!empty($connectionOptions)) {
-    $sectionFixed->addInput(new Form_Select(
-        'connection_uuid',
-        gettext('Connection'),
-        $pconfig['connection_uuid'],
-        $connectionOptions
-    ))->setHelp(gettext('Select the connection this instance will use.'));
+if (!empty($allConnections)) {
+    $selectedConnUuid = $pconfig['connection_uuid'];
+    $selectHtml = '<select name="connection_uuid" id="connection_uuid" class="form-control">';
+    foreach ($allGroups as $g) {
+        $gUuid  = $g['uuid'];
+        $gConns = $connectionsByGroup[$gUuid] ?? [];
+        if (empty($gConns)) {
+            continue;
+        }
+        $selectHtml .= '<optgroup label="' . htmlspecialchars($g['name'], ENT_QUOTES, 'UTF-8') . '">';
+        foreach ($gConns as $conn) {
+            $serverLabel = xray_connection_server_label($conn);
+            $label       = ($conn['name'] ?? '')
+                . ($serverLabel !== '' ? ' (' . $serverLabel . ')' : '');
+            $selected    = ($conn['uuid'] === $selectedConnUuid) ? ' selected' : '';
+            $selectHtml .= '<option value="' . htmlspecialchars($conn['uuid'], ENT_QUOTES, 'UTF-8') . '"' . $selected . '>'
+                . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
+                . '</option>';
+        }
+        $selectHtml .= '</optgroup>';
+    }
+    $selectHtml .= '</select>';
+    $selectHtml .= '<span class="help-block">' . gettext('Select the connection this instance will use.') . '</span>';
+    $sectionFixed->addInput(new Form_StaticText(gettext('Connection'), $selectHtml));
 } else {
     $sectionFixed->addInput(new Form_StaticText(
         gettext('Connection'),
