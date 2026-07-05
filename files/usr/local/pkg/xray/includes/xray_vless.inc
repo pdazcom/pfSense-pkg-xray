@@ -397,25 +397,43 @@ function xray_parse_vless_link_inner(string $link): array
     $fp        = in_array($params['fp'] ?? '', $allowedFp, true) ? $params['fp'] : 'chrome';
     $flow      = ($params['flow'] ?? '') === 'xtls-rprx-vision' ? 'xtls-rprx-vision' : 'none';
 
-    return [
+    $fields = [
         'protocol'          => 'vless',
-        'host'              => $sanitize($host),
-        'port'              => $port,
+        'server_address'    => $sanitize($host),
+        'server_port'       => (string)$port,
         'vless_uuid'        => $sanitize($uuid),
+        'encryption'        => 'none',
         'flow'              => $flow,
         'network'           => $sanitize($type),
         'security'          => $sanitize($security),
-        'sni'               => $sanitize($params['sni'] ?? ''),
-        'pbk'               => $sanitize($params['pbk'] ?? ''),
-        'sid'               => $sanitize($params['sid'] ?? ''),
-        'spx'               => $sanitize($params['spx'] ?? '/'),
-        'fp'                => $fp,
+        'reality_sni'       => $sanitize($params['sni'] ?? ''),
+        'reality_fingerprint' => $fp,
+        'reality_pubkey'    => $sanitize($params['pbk'] ?? ''),
+        'reality_shortid'   => $sanitize($params['sid'] ?? ''),
+        'reality_spiderx'   => $sanitize($params['spx'] ?? '/'),
+        'tls_sni'           => $sanitize($params['sni'] ?? ''),
+        'tls_fingerprint'   => $fp,
+        'tls_alpn'          => $sanitize($params['alpn'] ?? ''),
         'transport_path'    => $sanitize($params['path'] ?? ''),
         'transport_host'    => $sanitize($params['host'] ?? ''),
         'xhttp_mode'        => $sanitize($params['mode'] ?? 'stream-one'),
         'grpc_service_name' => $sanitize($params['serviceName'] ?? ''),
-        'name'              => $name,
+        'mux'               => '',
     ];
+
+    $fields['config_mode']   = 'custom';
+    $fields['custom_config'] = xray_build_config_json($fields);
+
+    $fields['host'] = $fields['server_address'];
+    $fields['port'] = $port;
+    $fields['sni']  = $fields['reality_sni'];
+    $fields['pbk']  = $fields['reality_pubkey'];
+    $fields['sid']  = $fields['reality_shortid'];
+    $fields['spx']  = $fields['reality_spiderx'];
+    $fields['fp']   = $fp;
+    $fields['name'] = $name;
+
+    return $fields;
 }
 
 function xray_parse_vmess_link(string $link): array
@@ -450,22 +468,41 @@ function xray_parse_vmess_link(string $link): array
         return htmlspecialchars($val, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     };
 
-    return [
+    $fields = [
         'protocol'          => 'vmess',
-        'host'              => $sanitize($host),
-        'port'              => $port,
-        'vmess_uuid'        => $sanitize($v['id']       ?? ''),
-        'vmess_alterId'     => (string)(int)($v['aid']  ?? 0),
-        'vmess_security'    => $sanitize($v['scy']       ?? 'auto') ?: 'auto',
+        'server_address'    => $sanitize($host),
+        'server_port'       => (string)$port,
+        'vless_uuid'        => $sanitize($v['id']  ?? ''),
+        'vmess_uuid'        => $sanitize($v['id']  ?? ''),
+        'vmess_alterId'     => (string)(int)($v['aid'] ?? 0),
+        'vmess_security'    => $sanitize($v['scy'] ?? 'auto') ?: 'auto',
         'network'           => $sanitize($network),
         'security'          => $sanitize($security),
-        'sni'               => $sanitize($v['sni']       ?? ''),
-        'fp'                => $fp,
-        'transport_path'    => $sanitize($v['path']      ?? ''),
-        'transport_host'    => $sanitize($v['host']      ?? ''),
-        'grpc_service_name' => $sanitize($v['serviceName'] ?? ($v['path'] ?? '')),
-        'name'              => htmlspecialchars($v['ps'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+        'tls_sni'           => $sanitize($v['sni'] ?? ''),
+        'tls_fingerprint'   => $fp,
+        'tls_alpn'          => '',
+        'reality_sni'       => '',
+        'reality_fingerprint' => 'chrome',
+        'reality_pubkey'    => '',
+        'reality_shortid'   => '',
+        'reality_spiderx'   => '/',
+        'transport_path'    => $sanitize($v['path']         ?? ''),
+        'transport_host'    => $sanitize($v['host']         ?? ''),
+        'grpc_service_name' => $sanitize($v['serviceName']  ?? ($v['path'] ?? '')),
+        'xhttp_mode'        => 'stream-one',
+        'mux'               => '',
     ];
+
+    $fields['config_mode']   = 'custom';
+    $fields['custom_config'] = xray_build_config_json($fields);
+
+    $fields['host'] = $fields['server_address'];
+    $fields['port'] = $port;
+    $fields['sni']  = $fields['tls_sni'];
+    $fields['fp']   = $fp;
+    $fields['name'] = htmlspecialchars($v['ps'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+    return $fields;
 }
 
 function xray_parse_trojan_link(string $link): array
@@ -513,20 +550,41 @@ function xray_parse_trojan_link(string $link): array
     $allowedFp = ['chrome', 'firefox', 'safari', 'edge', '360', 'qq', 'ios', 'android', 'random', 'randomized'];
     $fp        = in_array($params['fp'] ?? '', $allowedFp, true) ? $params['fp'] : 'chrome';
 
-    return [
+    $fields = [
         'protocol'          => 'trojan',
-        'host'              => $sanitize($host),
-        'port'              => $port,
+        'server_address'    => $sanitize($host),
+        'server_port'       => (string)$port,
         'trojan_password'   => $sanitize($password),
         'network'           => $sanitize($network),
         'security'          => $sanitize($security),
-        'sni'               => $sanitize($params['sni'] ?? ''),
-        'fp'                => $fp,
+        'tls_sni'           => $sanitize($params['sni'] ?? ''),
+        'tls_fingerprint'   => $fp,
+        'tls_alpn'          => $sanitize($params['alpn'] ?? ''),
+        'reality_sni'       => $sanitize($params['sni'] ?? ''),
+        'reality_fingerprint' => $fp,
+        'reality_pubkey'    => $sanitize($params['pbk'] ?? ''),
+        'reality_shortid'   => $sanitize($params['sid'] ?? ''),
+        'reality_spiderx'   => $sanitize($params['spx'] ?? '/'),
         'transport_path'    => $sanitize($params['path'] ?? ''),
         'transport_host'    => $sanitize($params['host'] ?? ''),
         'grpc_service_name' => $sanitize($params['serviceName'] ?? ''),
-        'name'              => $name,
+        'xhttp_mode'        => $sanitize($params['mode'] ?? 'stream-one'),
+        'mux'               => '',
     ];
+
+    $fields['config_mode']   = 'custom';
+    $fields['custom_config'] = xray_build_config_json($fields);
+
+    $fields['host'] = $fields['server_address'];
+    $fields['port'] = $port;
+    $fields['sni']  = $security === 'reality' ? $fields['reality_sni'] : $fields['tls_sni'];
+    $fields['pbk']  = $fields['reality_pubkey'];
+    $fields['sid']  = $fields['reality_shortid'];
+    $fields['spx']  = $fields['reality_spiderx'];
+    $fields['fp']   = $fp;
+    $fields['name'] = $name;
+
+    return $fields;
 }
 
 function xray_parse_ss_link(string $link): array
@@ -587,16 +645,25 @@ function xray_parse_ss_link(string $link): array
         return ['error' => 'Unsupported Shadowsocks method: ' . htmlspecialchars($method, ENT_QUOTES, 'UTF-8')];
     }
 
-    return [
+    $fields = [
         'protocol'    => 'shadowsocks',
-        'host'        => $sanitize($host),
-        'port'        => $port,
+        'server_address' => $sanitize($host),
+        'server_port'    => (string)$port,
         'ss_method'   => $sanitize($method),
         'ss_password' => $sanitize($password),
         'network'     => 'raw',
         'security'    => 'none',
-        'name'        => $name,
+        'mux'         => '',
     ];
+
+    $fields['config_mode']   = 'custom';
+    $fields['custom_config'] = xray_build_config_json($fields);
+
+    $fields['host'] = $fields['server_address'];
+    $fields['port'] = $port;
+    $fields['name'] = $name;
+
+    return $fields;
 }
 
 function xray_split_hostport(string $hostport): array
@@ -684,6 +751,64 @@ function xray_build_custom_config(
     ];
 
     return json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+function xray_happ_parse_entry(array $entry): ?array
+{
+    $proxy = null;
+    foreach ($entry['outbounds'] ?? [] as $ob) {
+        if (($ob['tag'] ?? '') === 'proxy') {
+            $proxy = $ob;
+            break;
+        }
+    }
+
+    if ($proxy === null || ($proxy['protocol'] ?? '') !== 'vless') {
+        return null;
+    }
+
+    $vnext = $proxy['settings']['vnext'][0] ?? null;
+    if ($vnext === null) {
+        return null;
+    }
+
+    $user    = $vnext['users'][0] ?? [];
+    $stream  = $proxy['streamSettings'] ?? [];
+    $reality = $stream['realitySettings'] ?? [];
+    $name    = $entry['remarks'] ?? ($vnext['address'] . ':' . $vnext['port']);
+
+    $customConfig = [
+        'log'      => ['loglevel' => 'warning'],
+        'inbounds' => [[
+            'tag'      => 'socks-in',
+            'port'     => 10808,
+            'listen'   => '127.0.0.1',
+            'protocol' => 'socks',
+            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => '127.0.0.1'],
+        ]],
+        'outbounds' => [
+            $proxy,
+            ['tag' => 'direct', 'protocol' => 'freedom'],
+        ],
+        'routing' => $entry['routing'] ?? [
+            'domainStrategy' => 'IPIfNonMatch',
+            'rules'          => [['type' => 'field', 'ip' => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], 'outboundTag' => 'direct']],
+        ],
+    ];
+
+    return [
+        'server_address'      => (string)($vnext['address'] ?? ''),
+        'server_port'         => (string)($vnext['port'] ?? ''),
+        'vless_uuid'          => (string)($user['id'] ?? ''),
+        'flow'                => (string)($user['flow'] ?? ''),
+        'reality_sni'         => (string)($reality['serverName'] ?? ''),
+        'reality_pubkey'      => (string)($reality['publicKey'] ?? ''),
+        'reality_shortid'     => (string)($reality['shortId'] ?? ''),
+        'reality_fingerprint' => (string)($reality['fingerprint'] ?? 'chrome'),
+        'config_mode'         => 'custom',
+        'custom_config'       => json_encode($customConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'name'                => $name,
+    ];
 }
 
 function xray_build_stream_settings(string $type, string $security, array $params): array

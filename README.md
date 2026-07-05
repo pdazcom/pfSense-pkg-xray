@@ -33,7 +33,7 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 
 - **Multi-instance** — run several independent VPN tunnels simultaneously, each with its own UUID, TUN interface, SOCKS5 port, and config
 - **Connection groups** — organize connections into manual or subscription-based groups; each instance binds to a group
-- **Subscription support** — fetch `vless://` links from a URL, auto-parse and sync connections (add / update / remove); auto-update every 30 minutes via cron
+- **Subscription support** — fetch `vless://` links from a URL, auto-parse and sync connections (add / update / remove); auto-update every 30 minutes via cron; optional Happ device headers (X-Hwid, User-Agent, X-Device-Os, etc.) for providers that require device authentication
 - **Connection rotation** — on start or watchdog trigger, URL-tests all connections in the group and activates the first working one
 - **URL test** — per-connection reachability test via a temporary xray-core SOCKS5 instance; stores ping RTT result in the GUI
 - **Wizard mode** — VLESS+Reality fields in the GUI (UUID, SNI, PublicKey, ShortID, Fingerprint, flow)
@@ -155,7 +155,10 @@ Connections are organized into groups. There is always a **Default** group for m
 
 1. **Add Group** → set type to **Subscription**, enter the subscription URL
 2. Optionally enable **Auto-update** (updates every 30 minutes via cron)
-3. **Save** → **Update Now** to fetch and sync connections immediately
+3. Optionally enable **Happ Headers** — if your provider uses Happ device authentication:
+   - Enter an **HWID** manually or click **Generate** to create a random one
+   - Adjust **User-Agent**, **Device OS**, **Locale**, **OS Version** as needed
+4. **Save** → **Update Now** to fetch and sync connections immediately
 
 After updating, the connections list shows a ping result badge for each entry (run **URL Test** to populate it).
 
