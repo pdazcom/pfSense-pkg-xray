@@ -63,9 +63,15 @@ function xray_get_connections_by_group(string $group_uuid): array
 
 function xray_fetch_subscription_raw(string $url, array $hapHeaders = []): string|false
 {
-    $curlBin = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
-    $ua  = !empty($hapHeaders['happ_ua']) ? $hapHeaders['happ_ua'] : 'xray-pfsense/1.0';
-    $cmd = $curlBin . ' -s -L --compressed --max-time 30 -A ' . escapeshellarg($ua);
+    $curlBin   = file_exists('/usr/local/bin/curl') ? '/usr/local/bin/curl' : '/usr/bin/curl';
+    $ua        = !empty($hapHeaders['happ_ua']) ? $hapHeaders['happ_ua'] : 'xray-pfsense/1.0';
+    $globalCfg = config_get_path('installedpackages/xray/config/0', []);
+    $proxyUrl  = trim($globalCfg['outbound_proxy'] ?? '');
+    $cmd       = $curlBin . ' -s -L --compressed --max-time 30 -A ' . escapeshellarg($ua);
+
+    if ($proxyUrl !== '') {
+        $cmd .= ' --proxy ' . escapeshellarg($proxyUrl);
+    }
 
     foreach ([
         'hwid'           => 'X-Hwid',

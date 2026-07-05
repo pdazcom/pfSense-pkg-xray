@@ -107,8 +107,9 @@ if (!empty($instances)):
 					</td>
 					<td>
 						<a class="fa fa-pencil" title="<?=gettext('Edit')?>" href="/xray/xray_edit.php?uuid=<?=urlencode($inst['uuid'] ?? '')?>"></a>
-						<a class="fa fa-play text-success xray-btn-start" title="<?=gettext('Start')?>" href="#" data-uuid="<?=$uuid?>"></a>
-						<a class="fa fa-stop text-warning xray-btn-stop" title="<?=gettext('Stop')?>" href="#" data-uuid="<?=$uuid?>"></a>
+						<a class="fa fa-play text-success xray-btn-start xray-icon-btn" title="<?=gettext('Start')?>" href="#" data-uuid="<?=$uuid?>"></a>
+						<a class="fa fa-stop text-warning xray-btn-stop xray-icon-btn" title="<?=gettext('Stop')?>" href="#" data-uuid="<?=$uuid?>"></a>
+						<a class="fa fa-refresh text-primary xray-btn-restart xray-icon-btn" title="<?=gettext('Restart')?>" href="#" data-uuid="<?=$uuid?>"></a>
 						<a class="fa fa-bar-chart text-info" title="<?=gettext('Diagnostics')?>" href="/xray/xray_diagnostics.php?uuid=<?=urlencode($inst['uuid'] ?? '')?>"></a>
 						<a class="fa fa-trash text-danger" title="<?=gettext('Delete')?>" href="?act=delete&amp;uuid=<?=$uuid?>" usepost></a>
 					</td>
@@ -137,6 +138,8 @@ endif;
 		<?=gettext('Add Instance')?>
 	</a>
 </nav>
+
+<style>.xray-icon-btn, .xray-icon-btn:hover, .xray-icon-btn:focus, .xray-icon-btn:active { text-decoration: none; }</style>
 
 <script type="text/javascript">
 //<![CDATA[
@@ -170,7 +173,20 @@ events.push(function() {
 		});
 	}
 
-	function instanceAction(action, uuid) {
+	var statusMessages = {
+		start:   '<?=gettext('Starting...')?>',
+		stop:    '<?=gettext('Stopping...')?>',
+		restart: '<?=gettext('Restarting...')?>'
+	};
+
+	function instanceAction(action, uuid, $btn) {
+		var $status = $('.xray-status[data-uuid="' + uuid + '"]');
+		if ($btn) {
+			$btn.data('icon', $btn.attr('class'))
+			    .attr('class', 'fa fa-spinner fa-spin xray-icon-btn')
+			    .css('pointer-events', 'none');
+			$status.html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> ' + (statusMessages[action] || '') + '</span>');
+		}
 		$.ajax({
 			url: '/xray/xray_ajax.php',
 			type: 'post',
@@ -182,19 +198,20 @@ events.push(function() {
 				}
 			},
 			complete: function() {
+				if ($btn) {
+					$btn.attr('class', $btn.data('icon')).css('pointer-events', '');
+				}
 				setTimeout(refreshStatus, 1500);
 			}
 		});
 	}
 
-	$('.xray-btn-start').on('click', function(e) {
+	$('.xray-btn-start, .xray-btn-stop, .xray-btn-restart').on('click', function(e) {
 		e.preventDefault();
-		instanceAction('start', $(this).data('uuid'));
-	});
-
-	$('.xray-btn-stop').on('click', function(e) {
-		e.preventDefault();
-		instanceAction('stop', $(this).data('uuid'));
+		var action = $(this).hasClass('xray-btn-start') ? 'start'
+		           : $(this).hasClass('xray-btn-stop')  ? 'stop'
+		           : 'restart';
+		instanceAction(action, $(this).data('uuid'), $(this));
 	});
 
 	refreshStatus();

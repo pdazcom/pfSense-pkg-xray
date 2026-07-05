@@ -96,7 +96,7 @@ function xray_resolve_connection_for_instance(array $inst): ?array
     $activeUuid = $inst['active_connection_uuid'] ?? '';
     if ($activeUuid !== '') {
         $conn = xray_get_connection_by_uuid($activeUuid);
-        if ($conn !== null) {
+        if ($conn !== null && ($conn['enabled'] ?? 'on') === 'on') {
             return $conn;
         }
     }
@@ -105,7 +105,11 @@ function xray_resolve_connection_for_instance(array $inst): ?array
     if ($groupUuid === '') {
         return null;
     }
-    $groupConns = xray_get_connections_by_group($groupUuid);
+    $groupConns = array_values(array_filter(
+        xray_get_connections_by_group($groupUuid),
+        fn($c) => ($c['enabled'] ?? 'on') === 'on'
+    ));
+    usort($groupConns, fn($a, $b) => (int)($b['priority'] ?? 0) <=> (int)($a['priority'] ?? 0));
     return $groupConns[0] ?? null;
 }
 
@@ -871,10 +875,11 @@ switch ($action) {
 
     case 'restart':
         if ($inst_uuid !== '') {
-            $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'tunproxy0';
+            $cOld     = xray_get_config($inst_uuid);
+            $tunIface = $cOld['tun_iface'] ?? 'tunproxy0';
             do_stop($inst_uuid, $tunIface);
             sleep(1);
+            $c = xray_get_config($inst_uuid);
             if (!empty($c) && $c['enabled']) {
                 do_start($c);
             }
@@ -884,8 +889,9 @@ switch ($action) {
                 do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
             }
             sleep(1);
-            foreach ($all as $uuid => $c) {
-                if ($c['enabled']) {
+            foreach (array_keys($all) as $uuid) {
+                $c = xray_get_config($uuid);
+                if (!empty($c) && $c['enabled']) {
                     do_start($c);
                 }
             }
@@ -894,10 +900,11 @@ switch ($action) {
 
     case 'reconfigure':
         if ($inst_uuid !== '') {
-            $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'tunproxy0';
+            $cOld     = xray_get_config($inst_uuid);
+            $tunIface = $cOld['tun_iface'] ?? 'tunproxy0';
             do_stop($inst_uuid, $tunIface);
             sleep(1);
+            $c = xray_get_config($inst_uuid);
             if (!empty($c) && $c['enabled']) {
                 $ok = do_start($c);
                 if ($ok) {
@@ -913,15 +920,15 @@ switch ($action) {
             }
         }
         $all       = xray_get_all_instances();
-        $allStopped = [];
+        $allUuids  = array_keys($all);
         foreach ($all as $uuid => $c) {
             do_stop($uuid, $c['tun_iface'] ?? 'tunproxy0');
-            $allStopped[$uuid] = $c;
         }
         sleep(1);
         $anyFailed = false;
-        foreach ($allStopped as $uuid => $c) {
-            if ($c['enabled']) {
+        foreach ($allUuids as $uuid) {
+            $c = xray_get_config($uuid);
+            if (!empty($c) && $c['enabled']) {
                 if (!do_start($c)) {
                     $anyFailed = true;
                 }

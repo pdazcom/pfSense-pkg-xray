@@ -133,6 +133,8 @@ function xray_render_test_result(string $json): string
                         <th><?=gettext('Server')?></th>
                         <th><?=gettext('Mode')?></th>
                         <th><?=gettext('Test Result')?></th>
+                        <th style="width:80px"><?=gettext('Priority')?></th>
+                        <th style="width:40px" title="<?=gettext('Enabled in rotation')?>"><?=gettext('On')?></th>
                         <th><?=gettext('Actions')?></th>
                     </tr>
                 </thead>
@@ -144,13 +146,28 @@ function xray_render_test_result(string $json): string
     $serverLabel = htmlspecialchars(xray_connection_server_label($conn), ENT_QUOTES, 'UTF-8');
     $mode        = xray_connection_mode_label($conn);
     $testResult  = $conn['test_result'] ?? '';
+    $connEnabled = ($conn['enabled'] ?? 'on') === 'on';
+    $connPriority = (int)($conn['priority'] ?? 0);
+    $rowClass    = $connEnabled ? '' : ' class="text-muted"';
 ?>
-                    <tr>
+                    <tr<?=$rowClass?>>
                         <td><?=$connName?></td>
                         <td><?=$serverLabel !== '' ? '<code>' . $serverLabel . '</code>' : '<span class="text-muted">&mdash;</span>'?></td>
                         <td><?=htmlspecialchars($mode, ENT_QUOTES, 'UTF-8')?></td>
                         <td class="xray-test-result" data-conn-uuid="<?=$connUuid?>">
                             <?=xray_render_test_result($testResult)?>
+                        </td>
+                        <td>
+                            <input type="number" class="xray-priority-input form-control input-sm"
+                                   data-conn-uuid="<?=$connUuid?>"
+                                   data-original="<?=$connPriority?>"
+                                   value="<?=$connPriority?>"
+                                   min="0" style="width:60px; padding:2px 4px">
+                        </td>
+                        <td>
+                            <input type="checkbox" class="xray-conn-toggle"
+                                   data-conn-uuid="<?=$connUuid?>"
+                                   <?=$connEnabled ? 'checked' : ''?>>
                         </td>
                         <td>
                             <a class="fa fa-pencil" title="<?=gettext('Edit')?>"
@@ -206,6 +223,68 @@ events.push(function() {
         }
         return '<span class="text-danger"><i class="fa fa-times-circle"></i> <?=gettext('Unavailable')?></span>';
     }
+
+    $('.xray-conn-toggle').on('change', function() {
+        var connUuid = $(this).data('conn-uuid');
+        var $cb      = $(this);
+        var $row     = $cb.closest('tr');
+        $cb.prop('disabled', true);
+
+        $.ajax({
+            url:      ajaxUrl,
+            type:     'post',
+            data:     { action: 'toggle_connection', uuid: connUuid },
+            dataType: 'json',
+            success: function(data) {
+                if (data && data.result === 'ok') {
+                    $cb.prop('checked', data.enabled);
+                    if (data.enabled) {
+                        $row.removeClass('text-muted');
+                    } else {
+                        $row.addClass('text-muted');
+                    }
+                } else {
+                    $cb.prop('checked', !$cb.prop('checked'));
+                }
+            },
+            error: function() {
+                $cb.prop('checked', !$cb.prop('checked'));
+            },
+            complete: function() {
+                $cb.prop('disabled', false);
+            }
+        });
+    });
+
+    $(document).on('change', '.xray-priority-input', function() {
+        var $input   = $(this);
+        var connUuid = $input.data('conn-uuid');
+        var priority = parseInt($input.val(), 10);
+        if (isNaN(priority) || priority < 0) {
+            $input.val($input.data('original'));
+            return;
+        }
+        $input.prop('disabled', true);
+        $.ajax({
+            url:      ajaxUrl,
+            type:     'post',
+            data:     { action: 'set_priority', uuid: connUuid, priority: priority },
+            dataType: 'json',
+            success: function(data) {
+                if (data && data.result === 'ok') {
+                    $input.data('original', data.priority);
+                } else {
+                    $input.val($input.data('original'));
+                }
+            },
+            error: function() {
+                $input.val($input.data('original'));
+            },
+            complete: function() {
+                $input.prop('disabled', false);
+            }
+        });
+    });
 
     $('.xray-btn-urltest').on('click', function(e) {
         e.preventDefault();

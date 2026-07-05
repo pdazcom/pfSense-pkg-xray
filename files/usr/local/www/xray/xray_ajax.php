@@ -259,6 +259,40 @@ switch ($action) {
         echo json_encode(xray_ajax_update_subscription($groupUuid));
         break;
 
+    case 'toggle_connection':
+        if ($uuid === '') {
+            echo json_encode(['error' => 'Missing UUID']);
+            break;
+        }
+        $conn = xray_get_connection_by_uuid($uuid);
+        if ($conn === null) {
+            echo json_encode(['error' => 'Connection not found']);
+            break;
+        }
+        $conn['enabled'] = (($conn['enabled'] ?? 'on') === 'on') ? '' : 'on';
+        xray_save_connection($conn);
+        echo json_encode(['result' => 'ok', 'enabled' => $conn['enabled'] === 'on']);
+        break;
+
+    case 'set_priority':
+        if ($uuid === '') {
+            echo json_encode(['error' => 'Missing UUID']);
+            break;
+        }
+        $priority = (int)($_POST['priority'] ?? 0);
+        if ($priority < 0) {
+            $priority = 0;
+        }
+        $conn = xray_get_connection_by_uuid($uuid);
+        if ($conn === null) {
+            echo json_encode(['error' => 'Connection not found']);
+            break;
+        }
+        $conn['priority'] = (string)$priority;
+        xray_save_connection($conn);
+        echo json_encode(['result' => 'ok', 'priority' => $priority]);
+        break;
+
     case 'delete_connection':
         if ($uuid === '') {
             echo json_encode(['error' => 'Missing UUID']);

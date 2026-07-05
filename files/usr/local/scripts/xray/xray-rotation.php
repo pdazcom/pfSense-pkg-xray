@@ -53,12 +53,18 @@ if ($groupUuid === '') {
     exit(1);
 }
 
-$groupConnections = xray_get_connections_by_group($groupUuid);
+$groupConnections = array_values(array_filter(
+    xray_get_connections_by_group($groupUuid),
+    fn($c) => ($c['enabled'] ?? 'on') === 'on'
+));
 
 if (empty($groupConnections)) {
+    rotation_send_notifications($inst, $groupUuid);
     echo json_encode(['status' => 'no_working_connection', 'error' => 'No connections in group']) . "\n";
     exit(1);
 }
+
+usort($groupConnections, fn($a, $b) => (int)($b['priority'] ?? 0) <=> (int)($a['priority'] ?? 0));
 
 $globalCfg = config_get_path('installedpackages/xray/config/0', []);
 $testUrl   = trim($globalCfg['test_url'] ?? '');
