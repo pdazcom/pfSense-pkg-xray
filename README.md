@@ -39,6 +39,8 @@ On **amd64**, [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) i
 - **Wizard mode** — VLESS+Reality fields in the GUI (UUID, SNI, PublicKey, ShortID, Fingerprint, flow)
 - **Custom JSON mode** — paste any xray-core `config.json` directly; supports all protocols and transports (xhttp, ws, grpc, h2, kcp, tcp)
 - **VLESS link import** — paste a `vless://` link to auto-fill wizard fields; non-Reality transports automatically fall back to Custom JSON mode
+- **Hysteria2** — create or import `hy2://` / `hysteria2://` connections
+- **Xray core updates** — install downloads the latest release; update it later from Settings without replacing the package
 - **Per-instance start / stop / restart** — without page reload, via AJAX
 - **Live status badges** — xray-core + tun2socks status polled every 10 s
 - **Config validation** — dry-run via `xray -test` before start, without touching the running service
@@ -181,15 +183,9 @@ On start, the instance runs connection rotation: it URL-tests each connection in
 
 After starting an instance, configure pfSense to route selected traffic through Xray.
 
-### 1. Create a Gateway
+### 1. Gateway and NAT
 
-**System → Routing → Gateways → Add**:
-
-- Interface: select the Xray TUN interface (appears as OPTx)
-- Gateway IP: same as TUN IP (shown in **Diagnostics → TUN IP**)
-  (e.g. if TUN IP is `10.100.66.46`, gateway is `10.100.66.46`)
-- Name: `XRAY_GW`
-- Monitor IP: **leave blank** — the tunnel bridge does not forward ICMP, so any monitor IP will cause the gateway to be marked down; disable monitoring entirely
+When an instance is saved, the package creates an Xray gateway and its outbound NAT rule automatically. It also removes these managed entries when the instance is deleted or its TUN interface changes.
 
 ### 2. Create an Alias
 
@@ -207,7 +203,7 @@ After starting an instance, configure pfSense to route selected traffic through 
 - Protocol: TCP/UDP
 - Source: LAN net (or specific hosts)
 - Destination: your Alias
-- Advanced Options → Gateway: `XRAY_GW`
+- Advanced Options → Gateway: the automatically created `XRAY_<instance-id>` gateway
 - **Save** → **Apply Changes**
 
 ---

@@ -83,9 +83,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
             'bypass_networks'        => trim($_POST['bypass_networks'] ?? ''),
         ];
 
+        $oldTunInterface = $isNew ? '' : (string)($pconfig['tun_interface'] ?? '');
+        if ($oldTunInterface !== '' && $oldTunInterface !== $instance['tun_interface']) {
+            xray_unregister_tun_interface($oldTunInterface);
+        }
         xray_save_instance($instance);
         xray_register_tun_interface($instance['tun_interface'], $newUuid);
-        write_config('Xray: save instance and register TUN ' . $newUuid);
+        xray_sync_network_entries($instance);
+        xray_cleanup_managed_entries();
+        write_config('Xray: save instance and synchronize TUN, gateway, and NAT ' . $newUuid);
         xray_resync();
 
         header('Location: /xray/xray_instances.php');

@@ -230,6 +230,7 @@ $sectionProto->addInput(new Form_Select(
         'vmess'       => 'VMess',
         'trojan'      => 'Trojan',
         'shadowsocks' => 'Shadowsocks',
+        'hysteria'    => 'Hysteria2',
         'http'        => 'HTTP',
         'socks'       => 'Socks',
     ]
@@ -354,6 +355,25 @@ $sectionSs->addInput(new Form_Input(
 ));
 
 $form->add($sectionSs);
+
+// ── Section: Hysteria2 Settings ─────────────────────────────────────────────
+
+$sectionHysteria = new Form_Section(gettext('Hysteria2 Settings'));
+$sectionHysteria->setAttribute('id', 'hysteria-section');
+$sectionHysteria->addInput(new Form_Input(
+    'hysteria_auth',
+    gettext('*Authentication Password'),
+    'password',
+    ''
+));
+$sectionHysteria->addInput(new Form_Input(
+    'tls_sni',
+    gettext('SNI'),
+    'text',
+    '',
+    ['placeholder' => 'vpn.example.com']
+))->setHelp(gettext('Hysteria2 always uses TLS. Leave empty to use the server address.'));
+$form->add($sectionHysteria);
 
 // ── Section: HTTP / Socks Settings ───────────────────────────────────────────
 
@@ -581,6 +601,14 @@ events.push(function() {
                 f.ss_password    = server.password || '';
                 break;
 
+            case 'hysteria':
+                f.server_address = settings.address || '';
+                f.server_port = String(settings.port || 443);
+                f.hysteria_auth = (ss.hysteriaSettings || {}).auth || '';
+                f.network = 'hysteria';
+                f.security = 'tls';
+                break;
+
             case 'http':
             case 'socks':
                 var server = (settings.servers || [{}])[0] || {};
@@ -722,6 +750,15 @@ events.push(function() {
         var streamSettings = null;
 
         switch (protocol) {
+            case 'hysteria':
+                outboundSettings = { version: 2, address: host, port: port };
+                streamSettings = {
+                    network: 'hysteria', security: 'tls',
+                    tlsSettings: { serverName: f.tls_sni || host, fingerprint: f.tls_fingerprint || 'chrome' },
+                    hysteriaSettings: { version: 2, auth: f.hysteria_auth || '' }
+                };
+                break;
+
             case 'vmess':
                 outboundSettings = { vnext: [{ address: host, port: port, users: [{
                     id:       f.vmess_uuid     || '',
@@ -808,6 +845,7 @@ events.push(function() {
         setVal('trojan_password',   f.trojan_password);
         setVal('ss_method',         f.ss_method);
         setVal('ss_password',       f.ss_password);
+        setVal('hysteria_auth',     f.hysteria_auth);
         setVal('http_username',     f.http_username);
         setVal('http_password',     f.http_password);
         setVal('network',           f.network);
@@ -837,6 +875,7 @@ events.push(function() {
             'vmess_uuid', 'vmess_alterId', 'vmess_security',
             'trojan_password',
             'ss_method', 'ss_password',
+            'hysteria_auth',
             'http_username', 'http_password',
             'network', 'security', 'mux',
             'tls_sni', 'tls_fingerprint', 'tls_alpn',
@@ -858,7 +897,7 @@ events.push(function() {
         if (currentMode === 'raw') {
             $('#raw-section').show();
             $('#proto-section, #vless-section, #vmess-section, #trojan-section, ' +
-              '#ss-section, #http-section, #settings-section, #tls-section, ' +
+              '#ss-section, #hysteria-section, #http-section, #settings-section, #tls-section, ' +
               '#reality-section, #transport-path-section, #xhttp-section, #grpc-section').hide();
             return;
         }
@@ -874,6 +913,7 @@ events.push(function() {
         $('#vmess-section')[proto  === 'vmess'        ? 'show' : 'hide']();
         $('#trojan-section')[proto === 'trojan'       ? 'show' : 'hide']();
         $('#ss-section')[proto     === 'shadowsocks'  ? 'show' : 'hide']();
+        $('#hysteria-section')[proto === 'hysteria' ? 'show' : 'hide']();
         $('#http-section')[proto === 'http' || proto === 'socks' ? 'show' : 'hide']();
 
         var hasStream = PROTO_WITH_STREAM.indexOf(proto) !== -1;
@@ -881,6 +921,7 @@ events.push(function() {
 
         if (!hasStream) {
             $('#tls-section, #reality-section, #transport-path-section, #xhttp-section, #grpc-section').hide();
+            if (proto === 'hysteria') { $('#hysteria-section').show(); }
             return;
         }
 
