@@ -78,9 +78,9 @@ try {
 
     $status = [];
     exec('/usr/local/bin/php ' . escapeshellarg(XRAY_SERVICE_CONTROL) . ' statusall 2>/dev/null', $status);
-    foreach (json_decode(implode('', $status), true) ?: [] as $item) {
-        if (($item['xray'] ?? '') === 'running' && !empty($item['uuid'])) {
-            $running[] = $item['uuid'];
+    foreach (json_decode(implode('', $status), true) ?: [] as $uuid => $item) {
+        if (($item['xray_core'] ?? '') === 'running' && xray_sanitize_uuid((string)$uuid) !== '') {
+            $running[] = $uuid;
         }
     }
     foreach ($running as $uuid) {

@@ -92,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act']) && $_POST['act
         xray_sync_network_entries($instance);
         xray_cleanup_managed_entries();
         write_config('Xray: save instance and synchronize TUN, gateway, and NAT ' . $newUuid);
+        filter_configure();
         xray_resync();
 
         header('Location: /xray/xray_instances.php');

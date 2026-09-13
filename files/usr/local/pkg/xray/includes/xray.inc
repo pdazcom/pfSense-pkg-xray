@@ -246,6 +246,7 @@ function xray_delete_instance(string $uuid): void
     xray_remove_network_entries($uuid);
 
     write_config('Xray: delete instance ' . $uuid);
+    filter_configure();
 }
 
 // ─── Group helpers ────────────────────────────────────────────────────────────
@@ -653,12 +654,10 @@ function xray_cleanup_managed_entries(): void
         $seen[$ifname] = true;
     }
 
-    $validGatewayNames = array_map(static fn(string $uuid): string => xray_gateway_name($uuid), array_column(xray_get_instances(), 'uuid'));
     $config['gateways']['gateway_item'] = array_values(array_filter(
         $config['gateways']['gateway_item'] ?? [],
-        static function (array $gateway) use ($validGatewayNames): bool {
-            $name = (string)($gateway['name'] ?? '');
-            return strpos($name, 'XRAY_') !== 0 || in_array($name, $validGatewayNames, true);
+        static function (array $gateway): bool {
+            return empty($gateway['xray_instance_uuid']);
         }
     ));
 }

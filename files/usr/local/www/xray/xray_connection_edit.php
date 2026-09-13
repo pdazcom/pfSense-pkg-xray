@@ -366,13 +366,6 @@ $sectionHysteria->addInput(new Form_Input(
     'password',
     ''
 ));
-$sectionHysteria->addInput(new Form_Input(
-    'tls_sni',
-    gettext('SNI'),
-    'text',
-    '',
-    ['placeholder' => 'vpn.example.com']
-))->setHelp(gettext('Hysteria2 always uses TLS. Leave empty to use the server address.'));
 $form->add($sectionHysteria);
 
 // ── Section: HTTP / Socks Settings ───────────────────────────────────────────
@@ -921,11 +914,11 @@ events.push(function() {
 
         if (!hasStream) {
             $('#tls-section, #reality-section, #transport-path-section, #xhttp-section, #grpc-section').hide();
-            if (proto === 'hysteria') { $('#hysteria-section').show(); }
+            if (proto === 'hysteria') { $('#hysteria-section, #tls-section').show(); }
             return;
         }
 
-        $('#tls-section')[security     === 'tls'     ? 'show' : 'hide']();
+        $('#tls-section')[security === 'tls' || proto === 'hysteria' ? 'show' : 'hide']();
         $('#reality-section')[security === 'reality' ? 'show' : 'hide']();
 
         var hasPath = NETWORKS_WITH_PATH.indexOf(network) !== -1;
@@ -1032,8 +1025,8 @@ events.push(function() {
                 var sec = data.security || 'none';
                 var f = {
                     protocol:            data.protocol        || 'vless',
-                    server_address:      data.host            || '',
-                    server_port:         String(data.port     || 443),
+                    server_address:      data.server_address  || data.host || '',
+                    server_port:         String(data.server_port || data.port || 443),
                     vless_uuid:          data.vless_uuid      || '',
                     flow:                data.flow            || 'none',
                     vmess_uuid:          data.vmess_uuid      || '',
@@ -1042,10 +1035,11 @@ events.push(function() {
                     trojan_password:     data.trojan_password || '',
                     ss_method:           data.ss_method       || 'aes-256-gcm',
                     ss_password:         data.ss_password     || '',
+                    hysteria_auth:       data.hysteria_auth   || '',
                     network:             data.network         || 'raw',
                     security:            sec,
-                    tls_sni:            sec === 'tls'     ? (data.sni || '') : '',
-                    tls_fingerprint:    sec === 'tls'     ? (data.fp  || 'chrome') : 'chrome',
+                    tls_sni:            sec === 'tls'     ? (data.tls_sni || data.sni || '') : '',
+                    tls_fingerprint:    sec === 'tls'     ? (data.tls_fingerprint || data.fp || 'chrome') : 'chrome',
                     reality_sni:        sec === 'reality' ? (data.sni || '') : '',
                     reality_fingerprint:sec === 'reality' ? (data.fp  || 'chrome') : 'chrome',
                     reality_pubkey:     data.pbk               || '',
