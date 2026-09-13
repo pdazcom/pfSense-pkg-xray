@@ -4,7 +4,7 @@
  * xray_ajax.php — AJAX dispatcher for Xray package GUI.
  *
  * Handles: statusall, start, stop, restart, import (VLESS parser),
- *          ifstats, testconnect, validate, log, version.
+ *          ifstats, testconnect, validate, log, version, update_core.
  */
 
 $nocsrf = true;
@@ -192,6 +192,15 @@ switch ($action) {
         echo ($data !== null) ? $json : json_encode(['version' => 'unknown']);
         break;
 
+    case 'update_core':
+        $out = [];
+        exec('/usr/local/bin/php /usr/local/scripts/xray/xray-update-core.php 2>&1', $out, $rc);
+        echo json_encode([
+            'result' => $rc === 0 ? 'ok' : 'failed',
+            'output' => implode("\n", $out),
+        ]);
+        break;
+
     case 'urltest':
         $connUuid = xray_sanitize_uuid(trim($_POST['connection_uuid'] ?? $_GET['connection_uuid'] ?? ''));
         if ($connUuid === '') {
@@ -337,4 +346,3 @@ function xray_ajax_update_subscription(string $groupUuid): array
 
     return xray_update_subscription_group($group);
 }
-

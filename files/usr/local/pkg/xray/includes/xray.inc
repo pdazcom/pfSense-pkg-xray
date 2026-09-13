@@ -229,17 +229,24 @@ function xray_delete_instance(string $uuid): void
     }
 
     $instances = $config['installedpackages']['xrayinstances']['config'];
+    $deleted = null;
     $updated   = [];
     foreach ($instances as $inst) {
         if (($inst['uuid'] ?? '') !== $uuid) {
             $updated[] = $inst;
+        } else {
+            $deleted = $inst;
         }
     }
     $config['installedpackages']['xrayinstances']['config'] = $updated;
 
-    xray_unregister_tun_interface_by_uuid($uuid);
+    if ($deleted !== null) {
+        xray_unregister_tun_interface((string)($deleted['tun_interface'] ?? ''));
+    }
+    xray_remove_network_entries($uuid);
 
     write_config('Xray: delete instance ' . $uuid);
+    filter_configure();
 }
 
 // ─── Group helpers ────────────────────────────────────────────────────────────
@@ -526,6 +533,14 @@ function xray_tun_ip_for_uuid(string $uuid): string
     return "10.100.{$block}.{$octet}";
 }
 
+function xray_tun_gw_for_uuid(string $uuid): string
+{
+    $crc   = crc32($uuid) & 0xFFFF;
+    $octet = ($crc % 62) + 1;
+    $block = ($crc >> 6) % 254 + 1;
+    return "10.100.{$block}." . ($octet + 1);
+}
+
 function xray_register_tun_interface(string $ifname, string $uuid): void
 {
     global $config;
@@ -544,15 +559,117 @@ function xray_register_tun_interface(string $ifname, string $uuid): void
     ];
 }
 
+function xray_gateway_name(string $uuid): string
+{
+    return 'XRAY_' . strtoupper(substr($uuid, 0, 8));
+}
+
+function xray_remove_network_entries(string $uuid): void
+{
+    global $config;
+
+    $gatewayItems = $config['gateways']['gateway_item'] ?? [];
+    if (is_array($gatewayItems)) {
+        $config['gateways']['gateway_item'] = array_values(array_filter(
+            $gatewayItems,
+            static fn(array $item): bool => ($item['xray_instance_uuid'] ?? '') !== $uuid
+        ));
+    }
+
+    $rules = $config['nat']['outbound']['rule'] ?? [];
+    if (is_array($rules)) {
+        $config['nat']['outbound']['rule'] = array_values(array_filter(
+            $rules,
+            static fn(array $rule): bool => ($rule['xray_instance_uuid'] ?? '') !== $uuid
+        ));
+    }
+}
+
+function xray_sync_network_entries(array $instance): void
+{
+    global $config;
+
+    $uuid = (string)($instance['uuid'] ?? '');
+    $ifname = (string)($instance['tun_interface'] ?? '');
+    if ($uuid === '' || $ifname === '') {
+        return;
+    }
+
+    xray_remove_network_entries($uuid);
+    $interface = xray_find_interface_key($ifname);
+    $config['gateways']['gateway_item'] = is_array($config['gateways']['gateway_item'] ?? null)
+        ? $config['gateways']['gateway_item'] : [];
+    $config['gateways']['gateway_item'][] = [
+        'interface'          => $interface,
+        'gateway'            => xray_tun_gw_for_uuid($uuid),
+        'name'               => xray_gateway_name($uuid),
+        'descr'              => 'Xray tunnel gateway',
+        'monitor'            => '',
+        'xray_instance_uuid' => $uuid,
+    ];
+
+    $config['nat'] = is_array($config['nat'] ?? null) ? $config['nat'] : [];
+    $config['nat']['outbound'] = is_array($config['nat']['outbound'] ?? null) ? $config['nat']['outbound'] : [];
+    $mode = $config['nat']['outbound']['mode'] ?? 'automatic';
+    if ($mode === 'automatic') {
+        $config['nat']['outbound']['mode'] = 'hybrid';
+    }
+    $config['nat']['outbound']['rule'] = is_array($config['nat']['outbound']['rule'] ?? null)
+        ? $config['nat']['outbound']['rule'] : [];
+    $config['nat']['outbound']['rule'][] = [
+        'interface'          => $interface,
+        'protocol'           => 'any',
+        'source'             => ['network' => 'any'],
+        'destination'        => ['network' => 'any'],
+        'target'             => 'interface',
+        'descr'              => 'Xray tunnel NAT',
+        'xray_instance_uuid' => $uuid,
+    ];
+}
+
+function xray_cleanup_managed_entries(): void
+{
+    global $config;
+
+    $expected = [];
+    foreach (xray_get_instances() as $instance) {
+        $uuid = (string)($instance['uuid'] ?? '');
+        $ifname = (string)($instance['tun_interface'] ?? '');
+        if ($uuid !== '' && $ifname !== '') {
+            $expected[$ifname] = 'Xray_' . strtoupper(substr($uuid, 0, 8));
+        }
+    }
+
+    $seen = [];
+    foreach ($config['interfaces'] ?? [] as $key => $iface) {
+        $ifname = (string)($iface['if'] ?? '');
+        $descr = (string)($iface['descr'] ?? '');
+        if (strpos($descr, 'Xray_') !== 0) {
+            continue;
+        }
+        if (!isset($expected[$ifname]) || $expected[$ifname] !== $descr || isset($seen[$ifname])) {
+            unset($config['interfaces'][$key]);
+            continue;
+        }
+        $seen[$ifname] = true;
+    }
+
+    $config['gateways']['gateway_item'] = array_values(array_filter(
+        $config['gateways']['gateway_item'] ?? [],
+        static function (array $gateway): bool {
+            return empty($gateway['xray_instance_uuid']);
+        }
+    ));
+}
+
 function xray_unregister_tun_interface(string $ifname): void
 {
     global $config;
 
     foreach ($config['interfaces'] as $key => $iface) {
-        if (($iface['if'] ?? '') === $ifname) {
+        if (($iface['if'] ?? '') === $ifname && strpos((string)($iface['descr'] ?? ''), 'Xray_') === 0) {
             unset($config['interfaces'][$key]);
             write_config('Xray: unregister TUN interface ' . $ifname);
-            return;
         }
     }
 }
@@ -620,6 +737,7 @@ EOT;
     xray_register_menu();
     xray_bootstrap_default_group();
     xray_migrate_instances_to_connections();
+    xray_cleanup_managed_entries();
 }
 
 function xray_register_menu(): void
@@ -645,7 +763,7 @@ function xray_register_menu(): void
     if (!$packageExists) {
         $config['installedpackages']['package'][] = [
             'name'         => 'xray',
-            'version'      => '1.2.4',
+            'version'      => '1.2.23',
             'descr'        => 'Xray VPN (xray-core + tunnel)',
             'include_file' => '/usr/local/pkg/xray/includes/xray.inc',
         ];
@@ -727,6 +845,7 @@ function xray_deinstall(): void
         if ($ifname !== '') {
             xray_unregister_tun_interface($ifname);
         }
+        xray_remove_network_entries((string)($inst['uuid'] ?? ''));
     }
 
     if (!empty($instances)) {

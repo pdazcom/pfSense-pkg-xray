@@ -110,6 +110,9 @@ print($form);
 
 ?>
 <nav class="action-buttons">
+	<button type="button" id="update-core" class="btn btn-default btn-sm">
+		<i class="fa fa-download icon-embed-btn"></i><?=gettext('Update Xray Core')?>
+	</button>
 	<button type="submit" id="saveform" class="btn btn-primary btn-sm">
 		<i class="fa fa-save icon-embed-btn"></i>
 		<?=gettext('Save')?>
@@ -119,6 +122,19 @@ print($form);
 <script type="text/javascript">
 //<![CDATA[
 events.push(function() {
+	$('#update-core').click(function() {
+		var $button = $(this);
+		$button.prop('disabled', true).text('<?=gettext('Updating...')?>');
+		$.post('/xray/xray_ajax.php', {action: 'update_core'}, function(data) {
+			var type = data.result === 'ok' ? 'success' : 'danger';
+			var output = $('<div>').text(data.output || '<?=gettext('No output')?>').html();
+			print_alert_box('<pre style="margin:0;white-space:pre-wrap">' + output + '</pre>', type);
+		}).fail(function() {
+			print_alert_box('<?=gettext('Failed to start Xray core update.')?>', 'danger');
+		}).always(function() {
+			$button.prop('disabled', false).html('<i class="fa fa-download icon-embed-btn"></i><?=gettext('Update Xray Core')?>');
+		});
+	});
 	$('#saveform').click(function() {
 		$(form).submit();
 	});

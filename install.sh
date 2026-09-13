@@ -14,7 +14,7 @@
 #   download-binaries    Download xray-core + tunnel binaries only
 #
 # Options:
-#   --xray-version VER   xray-core version (default: 25.4.30)
+#   --xray-version VER   xray-core version (default: latest)
 #   --hev-version VER    hev-socks5-tunnel version (default: 2.14.4, x86_64 only)
 #   --t2s-version VER    tun2socks version (default: 2.5.2, aarch64 fallback)
 #   --backend BACKEND    Force tunnel backend: 'hev' or 'tun2socks' (overrides arch detection)
@@ -25,7 +25,7 @@ set -u
 
 # ─── Defaults ─────────────────────────────────────────────────────────────────
 COMMAND="install"
-XRAY_VERSION="25.4.30"
+XRAY_VERSION="latest"
 HEV_VERSION="2.14.4"
 T2S_VERSION="2.5.2"
 SKIP_BINARIES=0
@@ -127,6 +127,10 @@ cmd_download_binaries() {
     mkdir -p /usr/local/tun2socks
 
     # xray-core
+    if [ "${XRAY_VERSION}" = "latest" ]; then
+        XRAY_VERSION=$(fetch -q -o - "https://api.github.com/repos/XTLS/Xray-core/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/')
+        [ -z "${XRAY_VERSION}" ] && die "Failed to determine latest Xray core release"
+    fi
     XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-freebsd-${XRAY_ARCH}.zip"
     info "Downloading xray-core ${XRAY_VERSION}..."
     fetch -q -o "${TMPDIR}/xray.zip" "${XRAY_URL}" || die "Failed to download xray-core"

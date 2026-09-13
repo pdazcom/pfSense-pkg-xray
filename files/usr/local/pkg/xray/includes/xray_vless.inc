@@ -115,6 +115,14 @@ function xray_parse_config_json(string $json): array
             $fields['http_password']  = $user['pass'] ?? '';
             break;
 
+        case 'hysteria':
+            $fields['server_address'] = $settings['address'] ?? '';
+            $fields['server_port']    = (string)($settings['port'] ?? 443);
+            $fields['hysteria_auth']  = ($ss['hysteriaSettings'] ?? [])['auth'] ?? '';
+            $fields['network']        = 'hysteria';
+            $fields['security']       = 'tls';
+            break;
+
         default:
             $fields['recognized'] = false;
             return $fields;
@@ -211,6 +219,26 @@ function xray_build_config_json(array $f, array $inst = []): string
     $streamSettings = xray_build_stream_settings($network, $security, $streamParams);
 
     switch ($protocol) {
+        case 'hysteria':
+            $outboundSettings = [
+                'version' => 2,
+                'address' => $host,
+                'port'    => $port,
+            ];
+            $streamSettings = [
+                'network' => 'hysteria',
+                'security' => 'tls',
+                'tlsSettings' => [
+                    'serverName' => $f['tls_sni'] ?? $host,
+                    'fingerprint' => $f['tls_fingerprint'] ?? 'chrome',
+                ],
+                'hysteriaSettings' => [
+                    'version' => 2,
+                    'auth' => $f['hysteria_auth'] ?? '',
+                ],
+            ];
+            break;
+
         case 'vmess':
             $outboundSettings = [
                 'vnext' => [[
@@ -324,7 +352,7 @@ function xray_build_config_json(array $f, array $inst = []): string
 
 /**
  * Parse any supported proxy share link into form fields.
- * Supported schemes: vless://, vmess://, trojan://, ss://
+ * Supported schemes: vless://, vmess://, trojan://, ss://, hy2://, hysteria2://
  * Returns array with form fields on success, or ['error' => '...'] on failure.
  */
 function xray_parse_vless_link(string $link): array
@@ -343,8 +371,35 @@ function xray_parse_vless_link(string $link): array
     if (strpos($link, 'vless://') === 0) {
         return xray_parse_vless_link_inner($link);
     }
+    if (strpos($link, 'hy2://') === 0 || strpos($link, 'hysteria2://') === 0) {
+        return xray_parse_hysteria2_link($link);
+    }
 
-    return ['error' => 'Unsupported link scheme. Supported: vless://, vmess://, trojan://, ss://'];
+    return ['error' => 'Unsupported link scheme. Supported: vless://, vmess://, trojan://, ss://, hy2://'];
+}
+
+function xray_parse_hysteria2_link(string $link): array
+{
+    $url = parse_url($link);
+    if (!is_array($url) || empty($url['host']) || empty($url['port'])) {
+        return ['error' => 'Invalid Hysteria2 link. Host and port are required.'];
+    }
+    parse_str($url['query'] ?? '', $query);
+    $auth = isset($url['user']) ? rawurldecode((string)$url['user']) : (string)($query['auth'] ?? '');
+    $sni = (string)($query['sni'] ?? $url['host']);
+    $name = isset($url['fragment']) ? rawurldecode((string)$url['fragment']) : '';
+    return [
+        'recognized' => true,
+        'protocol' => 'hysteria',
+        'server_address' => $url['host'],
+        'server_port' => (string)$url['port'],
+        'hysteria_auth' => $auth,
+        'network' => 'hysteria',
+        'security' => 'tls',
+        'tls_sni' => $sni,
+        'tls_fingerprint' => 'chrome',
+        'name' => $name,
+    ];
 }
 
 function xray_parse_vless_link_inner(string $link): array
